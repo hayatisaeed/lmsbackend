@@ -1,0 +1,46 @@
+# ---- Python ----
+*.py[cod]
+__pycache__/
+*.so
+
+# ---- Virtualenv ----
+venv/
+ENV/
+env/
+.venv/
+
+# ---- OS-Specific ----
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# ---- Django ----
+*.log
+*.pot
+*.pyc
+*.pyo
+*.pyd
+db.sqlite3
+media/
+staticfiles/
+
+# ---- VS Code ----
+.vscode/
+
+# ---- Testing ----
+.coverage
+htmlcov/
+.tox/
+.nox/
+.pytest_cache/
+
+# ---- IDEs ----
+.idea/
+*.iml
+*.sw?
+
