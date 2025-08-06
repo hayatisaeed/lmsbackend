@@ -1,0 +1,31 @@
+from django.urls import path
+from . import views
+
+app_name = 'users'
+
+urlpatterns = [
+    # Authentication endpoints
+    path('auth/register/', views.UserRegistrationView.as_view(), name='register'),
+    path('auth/login/otp/', views.OTPRequestView.as_view(), name='otp_request'),
+    path('auth/verify/otp/', views.OTPVerificationView.as_view(), name='otp_verify'),
+    path('auth/login/password/', views.PasswordLoginView.as_view(), name='password_login'),
+    
+    # Educational data endpoints
+    path('educational-levels/', views.EducationalLevelListView.as_view(), name='educational_levels'),
+    path('study-branches/', views.StudyBranchListView.as_view(), name='study_branches'),
+    path('olympiads/', views.OlympiadListView.as_view(), name='olympiads'),
+    
+    # Profile completion endpoints
+    path('profile/identity/', views.IdentityInformationView.as_view(), name='identity'),
+    path('profile/education/', views.EducationalProfileView.as_view(), name='education'),
+    path('profile/location/', views.LocationView.as_view(), name='location'),
+    path('profile/parent/', views.ParentContactView.as_view(), name='parent_contact'),
+    path('profile/parent/verify/', views.ParentVerificationView.as_view(), name='parent_verify'),
+    path('profile/completion/', views.ProfileCompletionView.as_view(), name='profile_completion'),
+    
+    # User profile
+    path('profile/', views.UserProfileView.as_view(), name='user_profile'),
+    
+    # Protected resource example
+    path('protected/', views.ProtectedResourceView.as_view(), name='protected_resource'),
+] 
