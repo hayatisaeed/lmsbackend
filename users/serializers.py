@@ -3,19 +3,30 @@ from django.core.exceptions import ValidationError
 from django.utils import timezone
 from .models import (
     User, IdentityInformation, EducationalLevel, StudyBranch, Olympiad,
-    EducationalProfile, Location, ParentContact, OTPCode
+    EducationalProfile, State, City, ParentContact, OTPCode
 )
 from .utils import send_otp, verify_otp, generate_parent_verification_code
+from phonenumber_field.serializerfields import PhoneNumberField as DRFPhoneNumberField
+from drf_spectacular.utils import extend_schema_field
+from drf_spectacular.types import OpenApiTypes
 
 
 class UserSerializer(serializers.ModelSerializer):
+    phone = DRFPhoneNumberField(help_text="User's phone number in international format")
+    state_name = serializers.CharField(source='state.name', read_only=True, help_text="State name")
+    city_name = serializers.CharField(source='city.name', read_only=True, help_text="City name")
     class Meta:
         model = User
-        fields = ['phone', 'display_name', 'email', 'is_profile_complete', 'created_at']
+        fields = ['phone', 'display_name', 'email', 'is_profile_complete', 'state', 'state_name', 'city', 'city_name', 'created_at']
         read_only_fields = ['is_profile_complete', 'created_at']
 
 
 class UserRegistrationSerializer(serializers.ModelSerializer):
+    phone = DRFPhoneNumberField(help_text="User's phone number in international format (e.g., +989123456789)")
+    display_name = serializers.CharField(help_text="User's display name", max_length=150)
+    email = serializers.EmailField(required=False, help_text="User's email address (optional)")
+    password = serializers.CharField(write_only=True, help_text="User's password", min_length=8)
+    
     class Meta:
         model = User
         fields = ['phone', 'display_name', 'email', 'password']
@@ -34,7 +45,7 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
 
 
 class OTPRequestSerializer(serializers.Serializer):
-    phone = serializers.CharField()
+    phone = DRFPhoneNumberField(help_text="Phone number to send OTP to (e.g., +989123456789)")
 
     def validate_phone(self, value):
         try:
@@ -49,12 +60,12 @@ class OTPRequestSerializer(serializers.Serializer):
     def create(self, validated_data):
         phone = validated_data['phone']
         otp_code = send_otp(phone)
-        return {'phone': phone, 'message': 'OTP sent successfully'}
+        return {'phone': str(phone), 'message': 'OTP sent successfully'}
 
 
 class OTPVerificationSerializer(serializers.Serializer):
-    phone = serializers.CharField()
-    code = serializers.CharField(max_length=6)
+    phone = DRFPhoneNumberField(help_text="Phone number that received the OTP")
+    code = serializers.CharField(max_length=6, help_text="6-digit OTP code")
 
     def validate_phone(self, value):
         try:
@@ -69,16 +80,14 @@ class OTPVerificationSerializer(serializers.Serializer):
     def validate(self, data):
         phone = data['phone']
         code = data['code']
-        
         if not verify_otp(phone, code):
             raise serializers.ValidationError("Invalid or expired OTP code")
-        
-        return data
+        return {'phone': str(phone), 'code': code}
 
 
 class PasswordLoginSerializer(serializers.Serializer):
-    phone = serializers.CharField()
-    password = serializers.CharField(write_only=True)
+    phone = DRFPhoneNumberField(help_text="User's phone number")
+    password = serializers.CharField(write_only=True, help_text="User's password")
 
     def validate_phone(self, value):
         try:
@@ -98,11 +107,11 @@ class EducationalLevelSerializer(serializers.ModelSerializer):
 
 
 class StudyBranchSerializer(serializers.ModelSerializer):
-    level_name = serializers.CharField(source='level.name', read_only=True)
+    level_name = serializers.CharField(source='educational_level.name', read_only=True, help_text="Educational level name")
     
     class Meta:
         model = StudyBranch
-        fields = ['id', 'level', 'level_name', 'name']
+        fields = ['id', 'educational_level', 'level_name', 'name']
 
 
 class OlympiadSerializer(serializers.ModelSerializer):
@@ -224,27 +233,22 @@ class EducationalProfileSerializer(serializers.ModelSerializer):
         return profile
 
 
-class LocationSerializer(serializers.ModelSerializer):
+class StateSerializer(serializers.ModelSerializer):
     class Meta:
-        model = Location
-        fields = ['province', 'city']
+        model = State
+        fields = ['id', 'name']
 
-    def create(self, validated_data):
-        user = self.context['request'].user
-        location, created = Location.objects.get_or_create(
-            user=user,
-            defaults=validated_data
-        )
-        
-        if not created:
-            for attr, value in validated_data.items():
-                setattr(location, attr, value)
-            location.save()
-        
-        return location
+
+class CitySerializer(serializers.ModelSerializer):
+    state_name = serializers.CharField(source='state.name', read_only=True, help_text="State name")
+    
+    class Meta:
+        model = City
+        fields = ['id', 'name', 'state', 'state_name']
 
 
 class ParentContactSerializer(serializers.ModelSerializer):
+    phone = DRFPhoneNumberField()
     class Meta:
         model = ParentContact
         fields = ['phone', 'relation', 'is_verified']

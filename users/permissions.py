@@ -1,5 +1,5 @@
 from rest_framework import permissions
-from .models import IdentityInformation, EducationalProfile, Location, ParentContact
+from .models import IdentityInformation, EducationalProfile, ParentContact
 
 
 class IsProfileCompletePermission(permissions.BasePermission):
@@ -16,11 +16,10 @@ class IsProfileCompletePermission(permissions.BasePermission):
         try:
             identity = request.user.identityinformation
             education = request.user.educationalprofile
-            location = request.user.location
             parent_contact = request.user.parentcontact
             
-            # All sections must be completed and verified
-            if (identity.is_verified and education and location and parent_contact.is_verified):
+            # All sections must be completed and verified, plus state and city must be set
+            if (identity.is_verified and education and request.user.state and request.user.city and parent_contact.is_verified):
                 return True
             else:
                 return False

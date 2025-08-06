@@ -4,19 +4,20 @@ from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import authenticate
+from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiExample
+from drf_spectacular.types import OpenApiTypes
 from django.utils import timezone
 from django.db import transaction
 
 from .models import (
     User, IdentityInformation, EducationalLevel, StudyBranch, Olympiad,
-    EducationalProfile, Location, ParentContact
+    EducationalProfile, State, City, ParentContact, OTPCode
 )
 from .serializers import (
-    UserSerializer, UserRegistrationSerializer, OTPRequestSerializer,
-    OTPVerificationSerializer, PasswordLoginSerializer, EducationalLevelSerializer,
-    StudyBranchSerializer, OlympiadSerializer, IdentityInformationSerializer,
-    EducationalProfileSerializer, LocationSerializer, ParentContactSerializer,
-    ParentVerificationSerializer, ProfileCompletionSerializer
+    UserSerializer, UserRegistrationSerializer, OTPRequestSerializer, OTPVerificationSerializer,
+    PasswordLoginSerializer, EducationalLevelSerializer, StudyBranchSerializer, OlympiadSerializer,
+    IdentityInformationSerializer, EducationalProfileSerializer, StateSerializer, CitySerializer,
+    ParentContactSerializer, ParentVerificationSerializer, ProfileCompletionSerializer
 )
 from .permissions import (
     IsProfileCompletePermission, IsIdentityVerifiedPermission,
@@ -24,6 +25,23 @@ from .permissions import (
 )
 
 
+@extend_schema(
+    tags=['Authentication'],
+    summary='User Registration',
+    description='Register a new user with phone number and display name',
+    examples=[
+        OpenApiExample(
+            'Valid Registration',
+            value={
+                'phone': '+989123456789',
+                'display_name': 'John Doe',
+                'email': 'john@example.com',
+                'password': 'securepassword123'
+            },
+            status_codes=['201']
+        )
+    ]
+)
 class UserRegistrationView(APIView):
     """User registration with phone and display name"""
     permission_classes = [AllowAny]
@@ -39,6 +57,18 @@ class UserRegistrationView(APIView):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
+@extend_schema(
+    tags=['Authentication'],
+    summary='Request OTP',
+    description='Request OTP code to be sent to the provided phone number',
+    examples=[
+        OpenApiExample(
+            'Valid OTP Request',
+            value={'phone': '+989123456789'},
+            status_codes=['200']
+        )
+    ]
+)
 class OTPRequestView(APIView):
     """Request OTP for phone number"""
     permission_classes = [AllowAny]
@@ -51,6 +81,21 @@ class OTPRequestView(APIView):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
+@extend_schema(
+    tags=['Authentication'],
+    summary='Verify OTP',
+    description='Verify OTP code and return JWT tokens for authentication',
+    examples=[
+        OpenApiExample(
+            'Valid OTP Verification',
+            value={
+                'phone': '+989123456789',
+                'code': '123456'
+            },
+            status_codes=['200']
+        )
+    ]
+)
 class OTPVerificationView(APIView):
     """Verify OTP and return JWT tokens"""
     permission_classes = [AllowAny]
@@ -99,6 +144,11 @@ class PasswordLoginView(APIView):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
+@extend_schema(
+    tags=['Education'],
+    summary='List Educational Levels',
+    description='Get all available educational levels'
+)
 class EducationalLevelListView(generics.ListAPIView):
     """List all educational levels"""
     queryset = EducationalLevel.objects.all()
@@ -106,6 +156,19 @@ class EducationalLevelListView(generics.ListAPIView):
     permission_classes = [IsAuthenticatedOrReadOnly]
 
 
+@extend_schema(
+    tags=['Education'],
+    summary='List Study Branches',
+    description='Get study branches, optionally filtered by educational level',
+    parameters=[
+        OpenApiParameter(
+            name='level',
+            type=OpenApiTypes.INT,
+            location=OpenApiParameter.QUERY,
+            description='Filter by educational level ID'
+        )
+    ]
+)
 class StudyBranchListView(generics.ListAPIView):
     """List study branches for a specific level"""
     serializer_class = StudyBranchSerializer
@@ -118,6 +181,11 @@ class StudyBranchListView(generics.ListAPIView):
         return StudyBranch.objects.all()
 
 
+@extend_schema(
+    tags=['Education'],
+    summary='List Olympiads',
+    description='Get all published olympiads'
+)
 class OlympiadListView(generics.ListAPIView):
     """List all published olympiads"""
     queryset = Olympiad.objects.filter(published=True)
@@ -181,36 +249,6 @@ class EducationalProfileView(APIView):
             return Response({
                 'message': 'Educational profile submitted successfully',
                 'profile': EducationalProfileSerializer(profile).data
-            }, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-
-class LocationView(APIView):
-    """Handle location information submission"""
-    permission_classes = [IsAuthenticated]
-    
-    def get(self, request):
-        try:
-            location = request.user.location
-            serializer = LocationSerializer(location)
-            return Response(serializer.data)
-        except Location.DoesNotExist:
-            return Response({'message': 'No location information found'}, status=status.HTTP_404_NOT_FOUND)
-    
-    def post(self, request):
-        serializer = LocationSerializer(
-            data=request.data,
-            context={'request': request}
-        )
-        if serializer.is_valid():
-            location = serializer.save()
-            
-            # Update user's profile completion status
-            request.user.check_profile_completion()
-            
-            return Response({
-                'message': 'Location information submitted successfully',
-                'location': LocationSerializer(location).data
             }, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -321,3 +359,40 @@ class ProtectedResourceView(APIView):
             'message': 'Access granted to protected resource',
             'user': UserSerializer(request.user).data
         }, status=status.HTTP_200_OK)
+
+
+@extend_schema(
+    tags=['Location'],
+    summary='List States',
+    description='Get all available states/provinces'
+)
+class StateListView(generics.ListAPIView):
+    """List all states"""
+    queryset = State.objects.all()
+    serializer_class = StateSerializer
+    permission_classes = [IsAuthenticatedOrReadOnly]
+
+
+@extend_schema(
+    tags=['Location'],
+    summary='List Cities',
+    description='Get cities, optionally filtered by state',
+    parameters=[
+        OpenApiParameter(
+            name='state',
+            type=OpenApiTypes.INT,
+            location=OpenApiParameter.QUERY,
+            description='Filter by state ID'
+        )
+    ]
+)
+class CityListView(generics.ListAPIView):
+    """List cities for a specific state"""
+    serializer_class = CitySerializer
+    permission_classes = [IsAuthenticatedOrReadOnly]
+    
+    def get_queryset(self):
+        state_id = self.request.query_params.get('state', None)
+        if state_id:
+            return City.objects.filter(state_id=state_id)
+        return City.objects.all()

@@ -3,7 +3,7 @@ from django.utils import timezone
 from django.utils.html import format_html
 from .models import (
     User, IdentityInformation, EducationalLevel, StudyBranch, Olympiad,
-    EducationalProfile, Location, ParentContact, OTPCode
+    EducationalProfile, State, City, ParentContact, OTPCode
 )
 from .utils import send_otp, generate_parent_verification_code
 
@@ -32,21 +32,21 @@ class UserAdmin(admin.ModelAdmin):
 
 @admin.register(EducationalLevel)
 class EducationalLevelAdmin(admin.ModelAdmin):
-    list_display = ['name', 'min_grade', 'max_grade', 'is_high_school']
+    list_display = ['name', 'is_high_school']
     list_filter = ['is_high_school']
     search_fields = ['name']
-    ordering = ['min_grade']
+    ordering = ['name']
 
 
 @admin.register(StudyBranch)
 class StudyBranchAdmin(admin.ModelAdmin):
-    list_display = ['name', 'level', 'level_name']
-    list_filter = ['level', 'level__is_high_school']
-    search_fields = ['name', 'level__name']
-    ordering = ['level', 'name']
+    list_display = ['name', 'educational_level', 'level_name']
+    list_filter = ['educational_level', 'educational_level__is_high_school']
+    search_fields = ['name', 'educational_level__name']
+    ordering = ['educational_level', 'name']
     
     def level_name(self, obj):
-        return obj.level.name
+        return obj.educational_level.name
     level_name.short_description = 'Level Name'
 
 
@@ -104,13 +104,19 @@ class EducationalProfileAdmin(admin.ModelAdmin):
     olympiad_count.short_description = 'Olympiads'
 
 
-@admin.register(Location)
-class LocationAdmin(admin.ModelAdmin):
-    list_display = ['user', 'province', 'city']
-    list_filter = ['province', 'created_at']
-    search_fields = ['user__display_name', 'user__phone', 'province', 'city']
-    readonly_fields = ['created_at', 'updated_at']
-    ordering = ['-created_at']
+@admin.register(State)
+class StateAdmin(admin.ModelAdmin):
+    list_display = ['name']
+    search_fields = ['name']
+    ordering = ['name']
+
+
+@admin.register(City)
+class CityAdmin(admin.ModelAdmin):
+    list_display = ['name', 'state']
+    list_filter = ['state']
+    search_fields = ['name', 'state__name']
+    ordering = ['state', 'name']
 
 
 @admin.register(ParentContact)

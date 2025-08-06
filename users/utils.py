@@ -2,14 +2,24 @@ import random
 from datetime import timedelta
 from django.utils import timezone
 from .models import OTPCode
+import requests
+from django.conf import settings
+import logging
+import re
 
+logger = logging.getLogger(__name__)
 
-def send_otp(phone_number):
+OTP_API_URL = "https://s.api.ir/api/sw1/"
+OTP_API_KEY = settings.OTP_API_KEY
+
+def send_otp(phone_number, method='sms', template=None):
     """
-    Generate and send OTP code to the provided phone number.
+    Generate and send OTP code to the provided phone number via external provider.
     
     Args:
         phone_number: PhoneNumberField instance
+        method: 'sms' or 'call' - method to send OTP
+        template: int or None - template id for SMS
         
     Returns:
         str: The generated OTP code (for testing purposes)
@@ -28,8 +38,37 @@ def send_otp(phone_number):
         }
     )
     
-    # In production: Integrate with SMS gateway here
-    print(f"OTP for {phone_number}: {code} (Expires: {expires_at})")
+    # Send OTP via external provider
+    number = str(phone_number)
+    # Remove all spaces and non-digit characters
+    number = re.sub(r'[^\d]', '', number)
+    
+    if method == 'call':
+        service = 'CallOTP'
+        payload = {"code": code, "number": number}
+    elif method == 'sms':
+        service = 'SmsOTP'
+        payload = {"code": code, "mobile": number}
+        if template is not None:
+            payload["template"] = template
+    else:
+        raise ValueError("method must be 'sms' or 'call'")
+
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {OTP_API_KEY}"
+    }
+
+    try:
+        response = requests.post(f"{OTP_API_URL}{service}", headers=headers, json=payload, timeout=10)
+        response.raise_for_status()
+        logger.info(f"OTP sent via {method} to {number}: {response.text}")
+        print(response.text)
+        print(f"Original: {str(phone_number)}, Cleaned: {number}")
+    except requests.RequestException as e:
+        logger.error(f"OTP sending failed for {number} via {method}: {e} | {getattr(e.response, 'text', '')}")
+        # In development, still print the code for testing
+        print(f"OTP for {phone_number}: {code} (Expires: {expires_at})")
     
     return code  # Return for testing purposes
 

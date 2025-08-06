@@ -16,7 +16,11 @@ class UserManager(BaseUserManager):
         user.save(using=self._db)
         return user
 
-    def create_superuser(self, phone, display_name, password=None, **extra_fields):
+    def create_superuser(self, phone, display_name=None, password=None, **extra_fields):
+        if display_name is None:
+            display_name = extra_fields.get('display_name')
+        if not display_name:
+            raise ValueError('The display_name must be set')
         extra_fields.setdefault('is_staff', True)
         extra_fields.setdefault('is_superuser', True)
         extra_fields.setdefault('is_active', True)
@@ -29,6 +33,8 @@ class User(AbstractUser):
     display_name = models.CharField(max_length=150)
     email = models.EmailField(blank=True, null=True)
     is_profile_complete = models.BooleanField(default=False)
+    state = models.ForeignKey('State', on_delete=models.SET_NULL, null=True, blank=True)
+    city = models.ForeignKey('City', on_delete=models.SET_NULL, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -45,11 +51,10 @@ class User(AbstractUser):
         try:
             identity = self.identityinformation
             education = self.educationalprofile
-            location = self.location
             parent_contact = self.parentcontact
             
             # Check if all required sections are completed
-            if (identity.is_verified and education and location and parent_contact.is_verified):
+            if (identity.is_verified and education and self.state and self.city and parent_contact.is_verified):
                 self.is_profile_complete = True
                 self.save()
                 return True
@@ -65,30 +70,24 @@ class User(AbstractUser):
 
 class EducationalLevel(models.Model):
     name = models.CharField(max_length=100, unique=True)
-    min_grade = models.IntegerField()
-    max_grade = models.IntegerField()
     is_high_school = models.BooleanField(default=False)
     
     class Meta:
-        ordering = ['min_grade']
+        ordering = ['name']
 
     def __str__(self):
         return self.name
 
-    def clean(self):
-        if self.min_grade > self.max_grade:
-            raise ValidationError('Min grade cannot be greater than max grade')
-
 
 class StudyBranch(models.Model):
-    level = models.ForeignKey(EducationalLevel, on_delete=models.CASCADE, related_name='study_branches')
+    educational_level = models.ForeignKey(EducationalLevel, on_delete=models.CASCADE, related_name='study_branches')
     name = models.CharField(max_length=100)
     
     class Meta:
-        unique_together = ['level', 'name']
+        unique_together = ['educational_level', 'name']
 
     def __str__(self):
-        return f"{self.name} ({self.level.name})"
+        return f"{self.name} ({self.educational_level.name})"
 
 
 class Olympiad(models.Model):
@@ -149,11 +148,23 @@ class IdentityInformation(models.Model):
         self.save()
 
 
+class EducationalGrade(models.Model):
+    name = models.CharField(max_length=50)
+    education_level = models.ForeignKey(EducationalLevel, related_name="grades", on_delete=models.CASCADE)
+
+    class Meta:
+        unique_together = ('name', 'education_level')
+        ordering = ['education_level', 'name']
+
+    def __str__(self):
+        return f"{self.name} ({self.education_level.name})"
+
+
 class EducationalProfile(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='educationalprofile')
     level = models.ForeignKey(EducationalLevel, on_delete=models.CASCADE)
-    grade = models.IntegerField()
-    study_branch = models.ForeignKey(StudyBranch, on_delete=models.SET_NULL, null=True, blank=True)
+    grade = models.ForeignKey(EducationalGrade, on_delete=models.CASCADE)
+    study_branch = models.ForeignKey(StudyBranch, on_delete=models.CASCADE)
     olympiads = models.ManyToManyField(Olympiad, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -163,35 +174,45 @@ class EducationalProfile(models.Model):
         verbose_name_plural = "Educational Profiles"
 
     def __str__(self):
-        return f"{self.user.display_name} - {self.level.name} Grade {self.grade}"
+        return f"{self.user.display_name} - {self.level.name} {self.grade.name}"
 
     def clean(self):
-        if self.level and self.grade:
-            if self.grade < self.level.min_grade or self.grade > self.level.max_grade:
-                raise ValidationError(
-                    f'Grade must be between {self.level.min_grade} and {self.level.max_grade} for {self.level.name}'
-                )
-        
-        if self.level and self.level.is_high_school and not self.study_branch:
-            raise ValidationError('Study branch is required for high school levels')
-        
-        if self.olympiads.count() > 3:
-            raise ValidationError('Maximum 3 olympiads allowed per user')
+        from django.core.exceptions import ValidationError
+        # Ensure grade belongs to level
+        if self.grade.education_level != self.level:
+            raise ValidationError("Selected grade does not belong to the selected educational level.")
+        # Ensure branch belongs to level
+        if self.study_branch.educational_level != self.level:
+            raise ValidationError("Selected study branch does not belong to the selected educational level.")
+        # Ensure all profiles have a study_branch, and for non-high-school levels, it should be 'general'
+        if not self.level.is_high_school:
+            if self.study_branch.name.lower() != 'general':
+                raise ValidationError("For non-high-school levels, the study branch must be 'general'.")
+        else:
+            # For high school, allow any branch
+            pass
 
 
-class Location(models.Model):
-    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='location')
-    province = models.CharField(max_length=100)
-    city = models.CharField(max_length=100)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
+class State(models.Model):
+    name = models.CharField(max_length=100, unique=True)
+    
     class Meta:
-        verbose_name = "Location"
-        verbose_name_plural = "Locations"
-
+        ordering = ['name']
+    
     def __str__(self):
-        return f"{self.user.display_name} - {self.city}, {self.province}"
+        return self.name
+
+
+class City(models.Model):
+    name = models.CharField(max_length=100)
+    state = models.ForeignKey(State, on_delete=models.CASCADE, related_name='cities')
+    
+    class Meta:
+        unique_together = ['name', 'state']
+        ordering = ['state', 'name']
+    
+    def __str__(self):
+        return f"{self.name}, {self.state.name}"
 
 
 class ParentContact(models.Model):
