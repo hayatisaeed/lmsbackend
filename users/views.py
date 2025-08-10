@@ -24,14 +24,23 @@ from .permissions import (
     IsNotVerifiedPermission, IsAuthenticatedOrReadOnly
 )
 
+from .utils import send_otp
+
 
 @extend_schema(
     tags=['Authentication'],
     summary='User Registration',
-    description='Register a new user with phone number and display name',
+    description='Register a new user with phone number (other fields optional)',
     examples=[
         OpenApiExample(
-            'Valid Registration',
+            'Minimal Registration',
+            value={
+                'phone': '+989123456789'
+            },
+            status_codes=['201']
+        ),
+        OpenApiExample(
+            'Full Registration',
             value={
                 'phone': '+989123456789',
                 'display_name': 'John Doe',
@@ -43,7 +52,7 @@ from .permissions import (
     ]
 )
 class UserRegistrationView(APIView):
-    """User registration with phone and display name"""
+    """User registration with phone number (other fields optional)"""
     permission_classes = [AllowAny]
     
     def post(self, request):
@@ -83,40 +92,144 @@ class OTPRequestView(APIView):
 
 @extend_schema(
     tags=['Authentication'],
-    summary='Verify OTP',
-    description='Verify OTP code and return JWT tokens for authentication',
+    summary='Verify OTP and Login/Register',
+    description='Verify OTP code and automatically create/update user, then return JWT tokens',
     examples=[
         OpenApiExample(
-            'Valid OTP Verification',
+            'Minimal Login',
             value={
                 'phone': '+989123456789',
                 'code': '123456'
+            },
+            status_codes=['200']
+        ),
+        OpenApiExample(
+            'Login with Profile Update',
+            value={
+                'phone': '+989123456789',
+                'code': '123456',
+                'display_name': 'John Doe',
+                'email': 'john@example.com',
+                'password': 'securepassword123'
             },
             status_codes=['200']
         )
     ]
 )
 class OTPVerificationView(APIView):
-    """Verify OTP and return JWT tokens"""
+    """Verify OTP and automatically create/update user, then return JWT tokens"""
     permission_classes = [AllowAny]
     
     def post(self, request):
         serializer = OTPVerificationSerializer(data=request.data)
         if serializer.is_valid():
-            phone = serializer.validated_data['phone']
-            try:
-                user = User.objects.get(phone=phone)
-                refresh = RefreshToken.for_user(user)
-                return Response({
-                    'access': str(refresh.access_token),
-                    'refresh': str(refresh),
-                    'user': UserSerializer(user).data
-                }, status=status.HTTP_200_OK)
-            except User.DoesNotExist:
-                return Response({
-                    'error': 'User not found'
-                }, status=status.HTTP_404_NOT_FOUND)
+            # Create or update user
+            user = serializer.save()
+            
+            # Generate JWT tokens
+            refresh = RefreshToken.for_user(user)
+            
+            return Response({
+                'message': 'User authenticated successfully',
+                'access': str(refresh.access_token),
+                'refresh': str(refresh),
+                'user': UserSerializer(user).data,
+                'is_new_user': user.created_at == user.updated_at
+            }, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+@extend_schema(
+    tags=['Authentication'],
+    summary='Unified Login/Registration',
+    description='Single endpoint for both login and registration - just provide phone number',
+    examples=[
+        OpenApiExample(
+            'Login/Register',
+            value={
+                'phone': '+989123456789'
+            },
+            status_codes=['200']
+        )
+    ]
+)
+class UnifiedLoginView(APIView):
+    """Unified login/registration endpoint - just provide phone number"""
+    permission_classes = [AllowAny]
+    
+    def post(self, request):
+        phone = request.data.get('phone')
+        if not phone:
+            return Response({
+                'error': 'Phone number is required'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Validate phone number
+        try:
+            from phonenumber_field.phonenumber import to_python
+            phone_number = to_python(phone, region='IR')
+            if not phone_number or not phone_number.is_valid():
+                return Response({
+                    'error': 'Invalid phone number format'
+                }, status=status.HTTP_400_BAD_REQUEST)
+        except Exception:
+            return Response({
+                'error': 'Invalid phone number format'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Check if this is a test phone number
+        from .utils import is_test_phone_number, get_test_phone_info
+        is_test = is_test_phone_number(phone_number)
+        
+        # Send OTP
+        try:
+            otp_code = send_otp(phone_number)
+            
+            response_data = {
+                'message': 'OTP sent successfully',
+                'phone': str(phone_number)
+            }
+            
+            # Add test information if it's a test phone number
+            if is_test:
+                test_info = get_test_phone_info()
+                response_data.update({
+                    'is_test_user': True,
+                    'test_info': f"🧪 Test Mode: Use OTP code {test_info['test_otp']} for verification",
+                    'note': 'This is a test phone number. No real SMS will be sent.'
+                })
+            
+            return Response(response_data, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response({
+                'error': 'Failed to send OTP'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@extend_schema(
+    tags=['Authentication'],
+    summary='Get Test Phone Information',
+    description='Get information about the test phone number for development/testing purposes'
+)
+class TestPhoneInfoView(APIView):
+    """Get information about test phone number for development"""
+    permission_classes = [AllowAny]
+    
+    def get(self, request):
+        from .utils import get_test_phone_info
+        test_info = get_test_phone_info()
+        
+        return Response({
+            'message': 'Test phone number information',
+            'test_phone': test_info['test_phone'],
+            'test_otp': test_info['test_otp'],
+            'description': test_info['description'],
+            'usage': {
+                'step1': f"POST /api/auth/login/ with phone: {test_info['test_phone']}",
+                'step2': f"POST /api/auth/verify/otp/ with phone: {test_info['test_phone']} and code: {test_info['test_otp']}",
+                'note': 'No real SMS will be sent for this phone number'
+            }
+        }, status=status.HTTP_200_OK)
 
 
 class PasswordLoginView(APIView):

@@ -8,29 +8,64 @@ from django.utils.translation import gettext_lazy as _
 
 
 class UserManager(BaseUserManager):
-    def create_user(self, phone, display_name, **extra_fields):
+    def create_user(self, phone, **extra_fields):
         if not phone:
             raise ValueError('Phone number is required')
-        user = self.model(phone=phone, display_name=display_name, **extra_fields)
+        
+        # Set default display_name if not provided
+        if 'display_name' not in extra_fields:
+            extra_fields['display_name'] = f"User_{str(phone)[-4:]}"
+        
+        # Generate unique username if not provided
+        if 'username' not in extra_fields:
+            extra_fields['username'] = self._generate_unique_username(phone)
+        
+        user = self.model(phone=phone, **extra_fields)
         user.set_password(extra_fields.get('password', None))
         user.save(using=self._db)
         return user
 
-    def create_superuser(self, phone, display_name=None, password=None, **extra_fields):
-        if display_name is None:
-            display_name = extra_fields.get('display_name')
-        if not display_name:
-            raise ValueError('The display_name must be set')
+    def create_superuser(self, phone, password=None, **extra_fields):
         extra_fields.setdefault('is_staff', True)
         extra_fields.setdefault('is_superuser', True)
         extra_fields.setdefault('is_active', True)
         extra_fields.setdefault('password', password)
-        return self.create_user(phone, display_name, **extra_fields)
+        
+        # Set default display_name for superuser if not provided
+        if 'display_name' not in extra_fields:
+            extra_fields['display_name'] = f"Admin_{str(phone)[-4:]}"
+        
+        # Generate unique username if not provided
+        if 'username' not in extra_fields:
+            extra_fields['username'] = self._generate_unique_username(phone, prefix="admin")
+        
+        return self.create_user(phone, **extra_fields)
+    
+    def _generate_unique_username(self, phone, prefix="user"):
+        """Generate a unique username based on phone number"""
+        base_username = f"{prefix}_{str(phone)[-4:]}"
+        username = base_username
+        counter = 1
+        
+        while self.model.objects.filter(username=username).exists():
+            username = f"{base_username}_{counter}"
+            counter += 1
+        
+        return username
 
 
 class User(AbstractUser):
+    # Override username field to make it non-unique and nullable
+    username = models.CharField(
+        max_length=150,
+        unique=False,  # Changed from unique=True
+        null=True,     # Allow null values
+        blank=True,    # Allow blank values
+        help_text="Username (auto-generated if not provided)"
+    )
+    
     phone = PhoneNumberField(unique=True, primary_key=True)
-    display_name = models.CharField(max_length=150)
+    display_name = models.CharField(max_length=150, blank=True, null=True)
     email = models.EmailField(blank=True, null=True)
     is_profile_complete = models.BooleanField(default=False)
     state = models.ForeignKey('State', on_delete=models.SET_NULL, null=True, blank=True)
@@ -39,12 +74,23 @@ class User(AbstractUser):
     updated_at = models.DateTimeField(auto_now=True)
 
     USERNAME_FIELD = 'phone'
-    REQUIRED_FIELDS = ['display_name']
+    REQUIRED_FIELDS = []  # No required fields except phone
 
     objects = UserManager()
 
     def __str__(self):
-        return f"{self.display_name} ({self.phone})"
+        return f"{self.display_name or 'Unnamed'} ({self.phone})"
+
+    def save(self, *args, **kwargs):
+        # Set default display_name if not provided
+        if not self.display_name:
+            self.display_name = f"User_{str(self.phone)[-4:]}"
+        
+        # Generate username if not provided
+        if not self.username:
+            self.username = User.objects._generate_unique_username(self.phone)
+        
+        super().save(*args, **kwargs)
 
     def check_profile_completion(self):
         """Check if all required profile sections are completed"""

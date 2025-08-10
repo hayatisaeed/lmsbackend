@@ -5,10 +5,11 @@ app_name = 'users'
 
 urlpatterns = [
     # Authentication endpoints
+    path('auth/login/', views.UnifiedLoginView.as_view(), name='unified_login'),
     path('auth/register/', views.UserRegistrationView.as_view(), name='register'),
-    path('auth/login/otp/', views.OTPRequestView.as_view(), name='otp_request'),
     path('auth/verify/otp/', views.OTPVerificationView.as_view(), name='otp_verify'),
     path('auth/login/password/', views.PasswordLoginView.as_view(), name='password_login'),
+    path('auth/test-info/', views.TestPhoneInfoView.as_view(), name='test_phone_info'),
     
     # Educational data endpoints
     path('educational-levels/', views.EducationalLevelListView.as_view(), name='educational_levels'),

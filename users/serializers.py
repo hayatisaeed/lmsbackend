@@ -23,16 +23,17 @@ class UserSerializer(serializers.ModelSerializer):
 
 class UserRegistrationSerializer(serializers.ModelSerializer):
     phone = DRFPhoneNumberField(help_text="User's phone number in international format (e.g., +989123456789)")
-    display_name = serializers.CharField(help_text="User's display name", max_length=150)
-    email = serializers.EmailField(required=False, help_text="User's email address (optional)")
-    password = serializers.CharField(write_only=True, help_text="User's password", min_length=8)
+    display_name = serializers.CharField(help_text="User's display name (optional)", max_length=150, required=False, allow_blank=True)
+    email = serializers.EmailField(required=False, help_text="User's email address (optional)", allow_blank=True)
+    password = serializers.CharField(write_only=True, help_text="User's password (optional)", min_length=8, required=False, allow_blank=True)
     
     class Meta:
         model = User
         fields = ['phone', 'display_name', 'email', 'password']
         extra_kwargs = {
-            'password': {'write_only': True},
-            'email': {'required': False}
+            'password': {'write_only': True, 'required': False},
+            'email': {'required': False},
+            'display_name': {'required': False}
         }
 
     def create(self, validated_data):
@@ -66,6 +67,9 @@ class OTPRequestSerializer(serializers.Serializer):
 class OTPVerificationSerializer(serializers.Serializer):
     phone = DRFPhoneNumberField(help_text="Phone number that received the OTP")
     code = serializers.CharField(max_length=6, help_text="6-digit OTP code")
+    display_name = serializers.CharField(help_text="User's display name (optional)", max_length=150, required=False, allow_blank=True)
+    email = serializers.EmailField(help_text="User's email address (optional)", required=False, allow_blank=True)
+    password = serializers.CharField(help_text="User's password (optional)", min_length=8, required=False, allow_blank=True)
 
     def validate_phone(self, value):
         try:
@@ -82,7 +86,29 @@ class OTPVerificationSerializer(serializers.Serializer):
         code = data['code']
         if not verify_otp(phone, code):
             raise serializers.ValidationError("Invalid or expired OTP code")
-        return {'phone': str(phone), 'code': code}
+        return data
+
+    def create(self, validated_data):
+        phone = validated_data['phone']
+        code = validated_data['code']
+        
+        # Remove code from validated_data as it's not needed for user creation
+        user_data = {k: v for k, v in validated_data.items() if k not in ['phone', 'code']}
+        
+        # Get or create user
+        user, created = User.objects.get_or_create(
+            phone=phone,
+            defaults=user_data
+        )
+        
+        # If user exists, update optional fields if provided
+        if not created and user_data:
+            for field, value in user_data.items():
+                if value:  # Only update if value is provided
+                    setattr(user, field, value)
+            user.save()
+        
+        return user
 
 
 class PasswordLoginSerializer(serializers.Serializer):

@@ -4,7 +4,8 @@ A Django REST API project implementing a comprehensive authentication system wit
 
 ## Features
 
-- **Custom User Model**: Phone number as primary identifier
+- **Custom User Model**: Phone number as primary identifier (only required field)
+- **Unified Login/Registration**: Single endpoint for both new and existing users
 - **OTP Authentication**: Primary authentication method
 - **Password Authentication**: Optional username/password login
 - **JWT Token Authentication**: Secure token-based sessions
@@ -34,9 +35,10 @@ config/
 ## Models
 
 ### User Model
-- `phone`: Primary key, phone number
-- `display_name`: Required display name
+- `phone`: Primary key, phone number (REQUIRED)
+- `display_name`: Optional display name (auto-generated if not provided)
 - `email`: Optional email
+- `password`: Optional password
 - `is_profile_complete`: Profile completion status
 
 ### Identity Information
@@ -61,22 +63,9 @@ config/
 
 ### Authentication
 
-#### 1. User Registration
+#### 1. Unified Login/Registration (Recommended)
 ```http
-POST /api/auth/register/
-Content-Type: application/json
-
-{
-    "phone": "09914307462",
-    "display_name": "John Doe",
-    "email": "john@example.com",
-    "password": "optional_password"
-}
-```
-
-#### 2. OTP Request
-```http
-POST /api/auth/login/otp/
+POST /api/auth/login/
 Content-Type: application/json
 
 {
@@ -84,7 +73,13 @@ Content-Type: application/json
 }
 ```
 
-#### 3. OTP Verification
+This endpoint:
+- Accepts any phone number
+- Automatically creates a new user if they don't exist
+- Sends OTP to the phone number
+- No separate registration needed
+
+#### 2. OTP Verification (Complete Login/Registration)
 ```http
 POST /api/auth/verify/otp/
 Content-Type: application/json
@@ -95,7 +90,34 @@ Content-Type: application/json
 }
 ```
 
-#### 4. Password Login
+Or with optional profile updates:
+```http
+POST /api/auth/verify/otp/
+Content-Type: application/json
+
+{
+    "phone": "09914307462",
+    "code": "123456",
+    "display_name": "John Doe",
+    "email": "john@example.com",
+    "password": "securepassword123"
+}
+```
+
+#### 3. Traditional Registration (Optional)
+```http
+POST /api/auth/register/
+Content-Type: application/json
+
+{
+    "phone": "09914307462",
+    "display_name": "John Doe",
+    "email": "john@example.com",
+    "password": "securepassword123"
+}
+```
+
+#### 4. Password Login (Optional)
 ```http
 POST /api/auth/login/password/
 Content-Type: application/json
@@ -213,16 +235,18 @@ Authorization: Bearer <token>
 
 ## Authentication Flow
 
-### 1. Registration
-1. User registers with phone and display name
-2. Account created with restricted access
-3. User must complete profile to access features
-
-### 2. OTP Authentication
-1. User requests OTP via `/api/auth/login/otp/`
-2. OTP sent to phone number (simulated in console)
+### 1. Simplified User Onboarding
+1. User provides phone number to `/api/auth/login/`
+2. OTP is sent to the phone number
 3. User verifies OTP via `/api/auth/verify/otp/`
-4. JWT tokens returned for authenticated access
+4. User is automatically created if new, or updated if existing
+5. JWT tokens are returned for authenticated access
+
+### 2. Profile Updates During Login
+Users can optionally provide additional information during OTP verification:
+- `display_name`: Custom display name
+- `email`: Email address
+- `password`: Password for future password-based login
 
 ### 3. Profile Completion
 Users must complete all sections in order:
@@ -237,6 +261,12 @@ Users must complete all sections in order:
 - **IsIdentityVerifiedPermission**: For identity-dependent features
 
 ## Validation Rules
+
+### User Creation
+- Only phone number is required
+- Display name is auto-generated if not provided (format: `User_XXXX` where XXXX are last 4 digits of phone)
+- Email and password are completely optional
+- Users can update their profile information during any subsequent login
 
 ### Educational Profile
 - Grade must be within level's min/max range
@@ -282,36 +312,27 @@ python manage.py runserver
 
 ## Testing the API
 
-### 1. Register a User
+### 1. Simple Login/Registration
 ```bash
-curl -X POST http://localhost:8000/api/auth/register/ \
-  -H "Content-Type: application/json" \
-  -d '{
-    "phone": "09914307462",
-    "display_name": "Test User"
-  }'
-```
-
-### 2. Request OTP
-```bash
-curl -X POST http://localhost:8000/api/auth/login/otp/ \
+# Step 1: Request OTP (creates user if new)
+curl -X POST http://localhost:8000/api/auth/login/ \
   -H "Content-Type: application/json" \
   -d '{
     "phone": "09914307462"
   }'
-```
 
-### 3. Verify OTP (check console for code)
-```bash
+# Step 2: Verify OTP and optionally update profile
 curl -X POST http://localhost:8000/api/auth/verify/otp/ \
   -H "Content-Type: application/json" \
   -d '{
     "phone": "09914307462",
-    "code": "123456"
+    "code": "123456",
+    "display_name": "Test User",
+    "email": "test@example.com"
   }'
 ```
 
-### 4. Complete Profile Sections
+### 2. Complete Profile Sections
 ```bash
 # Identity
 curl -X POST http://localhost:8000/api/profile/identity/ \
@@ -363,6 +384,9 @@ Access Django admin at `http://localhost:8000/admin/` to:
 
 ## Key Features
 
+- **Phone Number Only Registration**: Minimal friction user onboarding
+- **Auto-Generated Display Names**: Users get meaningful names even without input
+- **Unified Authentication Flow**: Single endpoint handles both new and existing users
 - **Phone Number Validation**: Uses `django-phonenumber-field`
 - **JWT Authentication**: Secure token-based sessions
 - **Rate Limiting**: Identity submission protection
@@ -380,4 +404,4 @@ Access Django admin at `http://localhost:8000/admin/` to:
 - Profile completion gates
 - Custom permissions for access control
 
-This implementation follows Django best practices and provides a complete authentication and profile management system suitable for educational platforms. 
+This implementation follows Django best practices and provides a complete authentication and profile management system suitable for educational platforms. The simplified user onboarding process makes it easy for users to get started with just their phone number. 
