@@ -65,7 +65,7 @@ config/
 
 #### 1. Unified Login/Registration (Recommended)
 ```http
-POST /api/auth/login/
+POST /api/users/auth/login/
 Content-Type: application/json
 
 {
@@ -81,7 +81,7 @@ This endpoint:
 
 #### 2. OTP Verification (Complete Login/Registration)
 ```http
-POST /api/auth/verify/otp/
+POST /api/users/auth/verify/otp/
 Content-Type: application/json
 
 {
@@ -92,7 +92,7 @@ Content-Type: application/json
 
 Or with optional profile updates:
 ```http
-POST /api/auth/verify/otp/
+POST /api/users/auth/verify/otp/
 Content-Type: application/json
 
 {
@@ -106,7 +106,7 @@ Content-Type: application/json
 
 #### 3. Traditional Registration (Optional)
 ```http
-POST /api/auth/register/
+POST /api/users/auth/register/
 Content-Type: application/json
 
 {
@@ -119,7 +119,7 @@ Content-Type: application/json
 
 #### 4. Password Login (Optional)
 ```http
-POST /api/auth/login/password/
+POST /api/users/auth/login/password/
 Content-Type: application/json
 
 {
@@ -132,19 +132,19 @@ Content-Type: application/json
 
 #### 5. List Educational Levels
 ```http
-GET /api/educational-levels/
+GET /api/users/educational-levels/
 Authorization: Bearer <token>
 ```
 
 #### 6. List Study Branches
 ```http
-GET /api/study-branches/?level=3
+GET /api/users/study-branches/?level=3
 Authorization: Bearer <token>
 ```
 
 #### 7. List Olympiads
 ```http
-GET /api/olympiads/
+GET /api/users/olympiads/
 Authorization: Bearer <token>
 ```
 
@@ -152,7 +152,7 @@ Authorization: Bearer <token>
 
 #### 8. Identity Information
 ```http
-POST /api/profile/identity/
+POST /api/users/profile/identity/
 Authorization: Bearer <token>
 Content-Type: application/json
 
@@ -164,7 +164,7 @@ Content-Type: application/json
 
 #### 9. Educational Profile
 ```http
-POST /api/profile/education/
+POST /api/users/profile/education/
 Authorization: Bearer <token>
 Content-Type: application/json
 
@@ -178,7 +178,7 @@ Content-Type: application/json
 
 #### 10. Location Information
 ```http
-POST /api/profile/location/
+POST /api/users/profile/location/
 Authorization: Bearer <token>
 Content-Type: application/json
 
@@ -190,7 +190,7 @@ Content-Type: application/json
 
 #### 11. Parent Contact
 ```http
-POST /api/profile/parent/
+POST /api/users/profile/parent/
 Authorization: Bearer <token>
 Content-Type: application/json
 
@@ -202,7 +202,7 @@ Content-Type: application/json
 
 #### 12. Parent Verification
 ```http
-POST /api/profile/parent/verify/
+POST /api/users/profile/parent/verify/
 Authorization: Bearer <token>
 Content-Type: application/json
 
@@ -215,13 +215,13 @@ Content-Type: application/json
 
 #### 13. Check Profile Completion
 ```http
-GET /api/profile/completion/
+GET /api/users/profile/completion/
 Authorization: Bearer <token>
 ```
 
 #### 14. User Profile
 ```http
-GET /api/profile/
+GET /api/users/profile/
 Authorization: Bearer <token>
 ```
 
@@ -229,16 +229,16 @@ Authorization: Bearer <token>
 
 #### 15. Protected Resource (Requires Complete Profile)
 ```http
-GET /api/protected/
+GET /api/users/protected/
 Authorization: Bearer <token>
 ```
 
 ## Authentication Flow
 
 ### 1. Simplified User Onboarding
-1. User provides phone number to `/api/auth/login/`
+1. User provides phone number to `/api/users/auth/login/`
 2. OTP is sent to the phone number
-3. User verifies OTP via `/api/auth/verify/otp/`
+3. User verifies OTP via `/api/users/auth/verify/otp/`
 4. User is automatically created if new, or updated if existing
 5. JWT tokens are returned for authenticated access
 
@@ -315,14 +315,14 @@ python manage.py runserver
 ### 1. Simple Login/Registration
 ```bash
 # Step 1: Request OTP (creates user if new)
-curl -X POST http://localhost:8000/api/auth/login/ \
+curl -X POST http://localhost:8000/api/users/auth/login/ \
   -H "Content-Type: application/json" \
   -d '{
     "phone": "09914307462"
   }'
 
 # Step 2: Verify OTP and optionally update profile
-curl -X POST http://localhost:8000/api/auth/verify/otp/ \
+curl -X POST http://localhost:8000/api/users/auth/verify/otp/ \
   -H "Content-Type: application/json" \
   -d '{
     "phone": "09914307462",
@@ -335,7 +335,7 @@ curl -X POST http://localhost:8000/api/auth/verify/otp/ \
 ### 2. Complete Profile Sections
 ```bash
 # Identity
-curl -X POST http://localhost:8000/api/profile/identity/ \
+curl -X POST http://localhost:8000/api/users/profile/identity/ \
   -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
   -d '{
@@ -344,7 +344,7 @@ curl -X POST http://localhost:8000/api/profile/identity/ \
   }'
 
 # Education
-curl -X POST http://localhost:8000/api/profile/education/ \
+curl -X POST http://localhost:8000/api/users/profile/education/ \
   -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
   -d '{
@@ -355,7 +355,7 @@ curl -X POST http://localhost:8000/api/profile/education/ \
   }'
 
 # Location
-curl -X POST http://localhost:8000/api/profile/location/ \
+curl -X POST http://localhost:8000/api/users/profile/location/ \
   -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
   -d '{
@@ -364,7 +364,7 @@ curl -X POST http://localhost:8000/api/profile/location/ \
   }'
 
 # Parent Contact
-curl -X POST http://localhost:8000/api/profile/parent/ \
+curl -X POST http://localhost:8000/api/users/profile/parent/ \
   -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
   -d '{
