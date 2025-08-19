@@ -1,0 +1,28 @@
+version: '3.9'
+services:
+  api:
+    build: .
+    command: python manage.py runserver 0.0.0.0:8000
+    environment:
+      - DJANGO_SECRET_KEY=changeme
+      - DEBUG=1
+      - ALLOWED_HOSTS=*
+      - REDIS_URL=redis://redis:6379/0
+      - DB_URL=postgres://postgres:postgres@db:5432/postgres
+    volumes:
+      - .:/code
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+      - redis
+  db:
+    image: postgres:14
+    environment:
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"
