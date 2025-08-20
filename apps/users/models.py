@@ -64,15 +64,21 @@ class User(AbstractBaseUser, PermissionsMixin):
 
     @property
     def profile_completion(self) -> dict:
+        parent_required = False
+        try:
+            parent_required = self.identityinfo.requires_parent  # type: ignore[attr-defined]
+        except IdentityInfo.DoesNotExist:
+            pass
         flags = {
             "identity": self.profile_identity,
             "education": self.profile_education,
             "location": self.profile_location,
-            "parent": self.profile_parent,
         }
-        percent = (
-            int(sum(1 for v in flags.values() if v) / len(flags) * 100) if flags else 0
-        )
+        if parent_required:
+            flags["parent"] = self.profile_parent
+        else:
+            flags["parent"] = True
+        percent = int(sum(1 for v in flags.values() if v) / len(flags) * 100)
         flags["percent_complete"] = percent
         return flags
 
@@ -130,3 +136,89 @@ class RefreshSession(models.Model):
             rotated_from=self,
         )
         return new_session
+
+
+class IdentityInfo(models.Model):
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    national_id = models.CharField(max_length=255)
+    date_of_birth = models.CharField(max_length=255)
+    first_name = models.CharField(max_length=255, blank=True, null=True)
+    last_name = models.CharField(max_length=255, blank=True, null=True)
+    father_name = models.CharField(max_length=255, blank=True, null=True)
+    gender = models.CharField(max_length=20, blank=True, null=True)
+    verified = models.BooleanField(default=False)
+    requires_parent = models.BooleanField(default=False)
+    submission_count = models.IntegerField(default=0)
+    last_attempt_at = models.DateTimeField(null=True, blank=True)
+
+
+class EducationalLevel(models.Model):
+    name = models.CharField(max_length=100)
+    min_grade = models.IntegerField()
+    max_grade = models.IntegerField()
+    is_high_school = models.BooleanField(default=False)
+
+    def __str__(self) -> str:  # pragma: no cover
+        return self.name
+
+
+class StudyBranch(models.Model):
+    level = models.ForeignKey(EducationalLevel, on_delete=models.CASCADE)
+    name = models.CharField(max_length=100)
+    is_active = models.BooleanField(default=True)
+
+    def __str__(self) -> str:  # pragma: no cover
+        return self.name
+
+
+class Olympiad(models.Model):
+    name = models.CharField(max_length=100)
+    olympiad_degree = models.IntegerField()
+    published = models.BooleanField(default=True)
+
+    def __str__(self) -> str:  # pragma: no cover
+        return self.name
+
+
+class EducationalProfile(models.Model):
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    level = models.ForeignKey(EducationalLevel, on_delete=models.CASCADE)
+    grade = models.IntegerField()
+    study_branch = models.ForeignKey(
+        StudyBranch, on_delete=models.SET_NULL, null=True, blank=True
+    )
+    olympiads = models.ManyToManyField(Olympiad, blank=True)
+
+
+class Province(models.Model):
+    name = models.CharField(max_length=100)
+    slug = models.SlugField(unique=True)
+
+    def __str__(self) -> str:  # pragma: no cover
+        return self.name
+
+
+class City(models.Model):
+    province = models.ForeignKey(Province, on_delete=models.CASCADE)
+    name = models.CharField(max_length=100)
+    slug = models.SlugField()
+
+    class Meta:
+        unique_together = ("province", "slug")
+
+    def __str__(self) -> str:  # pragma: no cover
+        return self.name
+
+
+class Location(models.Model):
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    province = models.ForeignKey(Province, on_delete=models.CASCADE)
+    city = models.ForeignKey(City, on_delete=models.CASCADE)
+
+
+class ParentContact(models.Model):
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    phone = models.CharField(max_length=20)
+    relation = models.CharField(max_length=20)
+    verified = models.BooleanField(default=False)
+    verified_at = models.DateTimeField(null=True, blank=True)

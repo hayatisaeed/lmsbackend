@@ -4,17 +4,20 @@ from datetime import timedelta
 from typing import Tuple
 
 import jwt
+import requests
+from cryptography.fernet import Fernet
 from django.conf import settings
 from django.utils import timezone
 
 from .models import OTPCode, RefreshSession, User
 
 
-def generate_otp(phone: str, ip: str | None = None) -> OTPCode:
+def generate_otp(phone: str, ip: str | None = None, purpose: str = "login") -> OTPCode:
     code = "".join(str(random.randint(0, 9)) for _ in range(settings.OTP_LENGTH))
     otp = OTPCode.objects.create(
         phone=phone,
         code=code,
+        purpose=purpose,
         expires_at=timezone.now() + timedelta(seconds=settings.OTP_TTL_SEC),
         ip=ip,
     )
@@ -71,3 +74,33 @@ def decode_refresh_token(token: str) -> dict:
         audience=settings.JWT_AUDIENCE,
         issuer=settings.JWT_ISSUER,
     )
+
+
+fernet = Fernet(settings.DATA_ENCRYPTION_KEY or Fernet.generate_key())
+
+
+def encrypt_str(value: str) -> str:
+    return fernet.encrypt(value.encode()).decode()
+
+
+def decrypt_str(value: str) -> str:  # pragma: no cover
+    return fernet.decrypt(value.encode()).decode()
+
+
+def verify_identity_with_provider(  # pragma: no cover
+    national_id: str, date_of_birth: str
+) -> dict:
+    if not settings.IDENTITY_API_URL:
+        return {"verified": True}
+    for _ in range(settings.IDENTITY_API_RETRIES):
+        try:
+            resp = requests.post(
+                settings.IDENTITY_API_URL,
+                json={"national_id": national_id, "date_of_birth": date_of_birth},
+                timeout=settings.IDENTITY_API_TIMEOUT,
+            )
+            if resp.status_code == 200:
+                return resp.json()
+        except requests.RequestException:
+            continue
+    raise RuntimeError("identity_provider_error")

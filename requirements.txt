@@ -6,6 +6,9 @@ psycopg[binary]
 redis
 PyJWT
 django-cors-headers
+requests
+cryptography
+prometheus-client
 
 # Dev
 devtools

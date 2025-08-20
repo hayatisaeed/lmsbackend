@@ -125,6 +125,12 @@ OTP_COOLDOWN_SEC = int(os.getenv("OTP_COOLDOWN_SEC", "60"))
 OTP_MAX_PER_24H_PER_PHONE = int(os.getenv("OTP_MAX_PER_24H_PER_PHONE", "5"))
 OTP_MAX_PER_HOUR_PER_IP = int(os.getenv("OTP_MAX_PER_HOUR_PER_IP", "20"))
 
+IDENTITY_API_URL = os.getenv("IDENTITY_API_URL", "")
+IDENTITY_API_TIMEOUT = float(os.getenv("IDENTITY_API_TIMEOUT", "2.5"))
+IDENTITY_API_RETRIES = int(os.getenv("IDENTITY_API_RETRIES", "2"))
+DATA_ENCRYPTION_KEY = os.getenv("DATA_ENCRYPTION_KEY", None)
+AGE_THRESHOLD = int(os.getenv("AGE_THRESHOLD", "18"))
+
 CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOWED_ORIGINS: List[str] = [
     o for o in os.getenv("ALLOWED_ORIGINS", "").split(",") if o
