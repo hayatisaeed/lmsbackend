@@ -258,3 +258,35 @@ class ParentVerifySerializer(serializers.Serializer):
         user.profile_parent = True
         user.save(update_fields=["profile_parent"])
         return {"verified": True}
+
+
+class EducationalLevelSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = EducationalLevel
+        fields = ["id", "name", "min_grade", "max_grade", "is_high_school"]
+
+
+class StudyBranchSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = StudyBranch
+        fields = ["id", "name", "level", "is_active"]
+
+
+class OlympiadSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Olympiad
+        fields = ["id", "name", "olympiad_degree", "published"]
+
+
+class CitySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = City
+        fields = ["id", "name", "slug"]
+
+
+class ProvinceListSerializer(serializers.ModelSerializer):
+    cities_count = serializers.IntegerField()
+
+    class Meta:
+        model = Province
+        fields = ["id", "name", "slug", "cities_count"]
