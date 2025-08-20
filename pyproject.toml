@@ -1,0 +1,26 @@
+[tool.black]
+line-length = 88
+target-version = ['py311']
+
+[tool.isort]
+profile = 'black'
+
+[tool.ruff]
+line-length = 88
+extend-exclude = ['shitcode']
+select = ['E', 'F', 'I', 'B']
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = 'config.settings'
+python_files = ['tests.py', 'test_*.py']
+addopts = '--ds=config.settings --reuse-db'
+norecursedirs = ['shitcode']
+
+[tool.mypy]
+python_version = '3.11'
+plugins = []
+ignore_missing_imports = true
+
+[build-system]
+requires = ['setuptools']
+build-backend = 'setuptools.build_meta'
