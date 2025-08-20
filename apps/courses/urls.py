@@ -1,0 +1,50 @@
+from django.urls import path
+
+from . import views
+
+urlpatterns = [
+    path("health/", views.health, name="courses-health"),
+    path("readiness/", views.readiness, name="courses-readiness"),
+    path("exams/", views.ExamListCreateView.as_view(), name="exam-list"),
+    path("exams/<uuid:pk>/", views.ExamDetailView.as_view(), name="exam-detail"),
+    path(
+        "exams/<uuid:exam_id>/publish/",
+        views.ExamPublishView.as_view(),
+        name="exam-publish",
+    ),
+    path(
+        "exams/<uuid:exam_id>/questions/",
+        views.QuestionCreateView.as_view(),
+        name="question-create",
+    ),
+    path(
+        "questions/<uuid:pk>/",
+        views.QuestionDetailView.as_view(),
+        name="question-detail",
+    ),
+    path(
+        "questions/<uuid:question_id>/options/",
+        views.MCQOptionCreateView.as_view(),
+        name="mcqoption-create",
+    ),
+    path(
+        "questions/<uuid:question_id>/files/",
+        views.QuestionFileUploadView.as_view(),
+        name="question-file-upload",
+    ),
+    path(
+        "question-files/<uuid:pk>/",
+        views.QuestionFileDeleteView.as_view(),
+        name="question-file-delete",
+    ),
+    path(
+        "exams/<uuid:exam_id>/assign-to-course/",
+        views.ExamAssignView.as_view(),
+        name="exam-assign",
+    ),
+    path(
+        "exams/<uuid:exam_id>/assignments/",
+        views.ExamAssignmentListView.as_view(),
+        name="exam-assignments",
+    ),
+]

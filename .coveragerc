@@ -1,4 +1,6 @@
 [run]
+source =
+    apps
 omit =
     config/wsgi.py
     manage.py
