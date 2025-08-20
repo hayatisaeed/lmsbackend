@@ -78,7 +78,9 @@ def parse_db_url(url: str) -> dict:
     raise ValueError("Unsupported DB scheme")
 
 
-DATABASES = {"default": parse_db_url(os.getenv("DB_URL", "sqlite:///db.sqlite3"))}
+# Convert the Path to string explicitly here
+default_db = str(BASE_DIR / "db.sqlite3")
+DATABASES = {"default": parse_db_url(os.getenv("DB_URL", f"sqlite:///{default_db}"))}
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 

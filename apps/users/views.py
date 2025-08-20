@@ -75,6 +75,26 @@ class VerifyOTPView(APIView):
                 "profile_completion": user.profile_completion,
             }
         )
+
+        refresh_cookie_name = str(settings.REFRESH_COOKIE_NAME)
+        jwt_refresh_ttl = settings.JWT_REFRESH_TTL_SEC
+        cookie_samesite = settings.COOKIE_SAMESITE
+
+        print(f"cookie_name: {refresh_cookie_name}, jwt_ttl: {jwt_refresh_ttl}, cookie_samesite: {cookie_samesite}")
+        try:
+            #print(f"refresh token: {refresh_token}")
+            response.set_cookie(
+                key=refresh_cookie_name, 
+                value=refresh_token,
+                max_age=jwt_refresh_ttl,  # Cookie expires in 1 hour (in seconds)
+                httponly=True, # Makes the cookie inaccessible to client-side scripts
+                secure=False,  # Set to True if serving over HTTPS
+                samesite=cookie_samesite, # Controls cross-site request behavior
+                path='/'       # The path for which the cookie is valid
+            )
+        except Exception as e:
+            print(f"related error for coockies: {e}")
+        '''
         response.set_cookie(
             settings.REFRESH_COOKIE_NAME,
             refresh_token,
@@ -91,6 +111,7 @@ class VerifyOTPView(APIView):
             secure=True,
             samesite=settings.COOKIE_SAMESITE,
         )
+        '''
         return response
 
 

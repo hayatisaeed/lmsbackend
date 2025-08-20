@@ -21,6 +21,7 @@ def generate_otp(phone: str, ip: str | None = None, purpose: str = "login") -> O
         expires_at=timezone.now() + timedelta(seconds=settings.OTP_TTL_SEC),
         ip=ip,
     )
+    print(f"otp code for phone: {phone} is code: {code}")
     return otp
 
 

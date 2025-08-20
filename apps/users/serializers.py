@@ -54,8 +54,6 @@ class VerifyOTPSerializer(serializers.Serializer):
         otp: OTPCode = self.validated_data["otp_obj"]
         user, _created = User.objects.get_or_create(phone=self.validated_data["phone"])
         display_name = self.validated_data.get("display_name")
-        if not user.display_name and not display_name:
-            raise serializers.ValidationError({"display_name": "required"})
         if display_name:
             user.display_name = display_name
         email = self.validated_data.get("email")
