@@ -47,4 +47,30 @@ urlpatterns = [
         views.ExamAssignmentListView.as_view(),
         name="exam-assignments",
     ),
+    path("my/active-exams/", views.ActiveExamsListView.as_view(), name="active-exams"),
+    path(
+        "<uuid:course_id>/exams/<uuid:exam_id>/attempts/start/",
+        views.AttemptStartView.as_view(),
+        name="attempt-start",
+    ),
+    path(
+        "exams/attempts/<uuid:attempt_id>/",
+        views.AttemptDetailView.as_view(),
+        name="attempt-detail",
+    ),
+    path(
+        "exams/attempts/<uuid:attempt_id>/answers/<uuid:question_id>/autosave/",
+        views.AnswerAutosaveView.as_view(),
+        name="answer-autosave",
+    ),
+    path(
+        "exams/attempts/<uuid:attempt_id>/submit/",
+        views.AttemptSubmitView.as_view(),
+        name="attempt-submit",
+    ),
+    path(
+        "exams/attempts/<uuid:attempt_id>/result/",
+        views.AttemptResultView.as_view(),
+        name="attempt-result",
+    ),
 ]

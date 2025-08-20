@@ -15,6 +15,7 @@ from .models import (
     GradingItem,
     MCQOption,
     Question,
+    QuestionFile,
 )
 
 
@@ -190,6 +191,36 @@ class MCQOptionSerializer(serializers.ModelSerializer):
         return attrs
 
 
+class QuestionFileSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = QuestionFile
+        fields = ["id", "title", "file"]
+
+
+class MCQOptionReadSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = MCQOption
+        fields = ["id", "text", "order_index"]
+
+
+class QuestionReadSerializer(serializers.ModelSerializer):
+    options = MCQOptionReadSerializer(many=True, read_only=True)
+    assets = QuestionFileSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = Question
+        fields = [
+            "id",
+            "type",
+            "title",
+            "body_richtext",
+            "order_index",
+            "is_required",
+            "options",
+            "assets",
+        ]
+
+
 class AttemptStartSerializer(serializers.ModelSerializer):
     class Meta:
         model = Attempt
@@ -222,7 +253,147 @@ class AttemptStartSerializer(serializers.ModelSerializer):
         return attrs
 
     def create(self, validated_data):
-        return Attempt.objects.create(**validated_data)
+        attempt = Attempt.objects.create(**validated_data)
+        for question in attempt.exam.questions.all():
+            Answer.objects.create(attempt=attempt, question=question)
+        return attempt
+
+
+class ActiveExamSerializer(serializers.Serializer):
+    exam_id = serializers.UUIDField()
+    course_id = serializers.UUIDField()
+    title = serializers.CharField()
+    start_at = serializers.DateTimeField()
+    end_at = serializers.DateTimeField()
+    started = serializers.BooleanField()
+    attempt_status = serializers.CharField(allow_null=True)
+    expires_at = serializers.DateTimeField(allow_null=True)
+
+
+class AttemptDetailSerializer(serializers.ModelSerializer):
+    questions = serializers.SerializerMethodField()
+    remaining_seconds = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Attempt
+        fields = [
+            "id",
+            "exam",
+            "course",
+            "status",
+            "started_at",
+            "expires_at",
+            "remaining_seconds",
+            "questions",
+        ]
+        read_only_fields = fields
+
+    def get_questions(self, obj):
+        qs = obj.exam.questions.prefetch_related("options", "assets")
+        return QuestionReadSerializer(qs, many=True).data
+
+    def get_remaining_seconds(self, obj):
+        if obj.expires_at:
+            delta = obj.expires_at - timezone.now()
+            return max(0, int(delta.total_seconds()))
+        return None
+
+
+class AnswerAutoSaveSerializer(serializers.Serializer):
+    payload = serializers.JSONField()
+
+    def validate(self, attrs):
+        question: Question = self.context["question"]
+        payload = attrs["payload"]
+        if question.type == Question.Type.MCQ:
+            if not isinstance(payload, list):
+                raise serializers.ValidationError("invalid_payload")
+            option_ids = {str(opt.id) for opt in question.options.all()}
+            if not payload or any(str(p) not in option_ids for p in payload):
+                raise serializers.ValidationError("invalid_option")
+        elif question.type in [Question.Type.TEXT, Question.Type.TEXT_OR_FILE]:
+            if not isinstance(payload, str):
+                raise serializers.ValidationError("invalid_payload")
+        elif question.type == Question.Type.FILE:
+            raise serializers.ValidationError("files_not_supported")
+        return attrs
+
+    def save(self):
+        attempt: Attempt = self.context["attempt"]
+        question: Question = self.context["question"]
+        answer, _ = Answer.objects.get_or_create(attempt=attempt, question=question)
+        answer.final_payload = self.validated_data["payload"]
+        answer.save()
+        now = timezone.now().isoformat()
+        return {"version": now, "saved_at": now}
+
+
+class AttemptSubmitSerializer(serializers.Serializer):
+    def validate(self, attrs):
+        attempt: Attempt = self.context["attempt"]
+        if attempt.status != Attempt.Status.IN_PROGRESS:
+            raise serializers.ValidationError("invalid_status")
+        for question in attempt.exam.questions.filter(is_required=True):
+            ans = attempt.answers.filter(question=question).first()
+            if not ans or ans.final_payload in [None, "", [], {}]:
+                raise serializers.ValidationError("missing_answers")
+        return attrs
+
+    def save(self):
+        attempt: Attempt = self.context["attempt"]
+        now = timezone.now()
+        expired = attempt.expires_at and now >= attempt.expires_at
+        attempt.submitted_at = now
+        attempt.status = Attempt.Status.EXPIRED if expired else Attempt.Status.SUBMITTED
+        attempt.save()
+        exam = attempt.exam
+        if (
+            exam.auto_grade_if_all_mcq
+            and exam.questions.filter(type=Question.Type.MCQ).count()
+            == exam.questions.count()
+        ):
+            score = Decimal("0")
+            for question in exam.questions.all():
+                answer = attempt.answers.get(question=question)
+                correct = question.options.get(is_correct=True)
+                chosen = answer.final_payload
+                if isinstance(chosen, list):
+                    chosen = chosen[0] if chosen else None
+                if str(chosen) == str(correct.id):
+                    score += question.correct_score or exam.default_correct_score
+                else:
+                    score += question.wrong_score or exam.default_wrong_score
+            attempt.final_score = score
+            attempt.is_passed = score >= (exam.min_accept_score or 0)
+            attempt.autograded = True
+            if not expired:
+                attempt.status = Attempt.Status.GRADED
+            attempt.result_visibility_state = (
+                Attempt.ResultVisibility.PENDING
+                if exam.hide_autograded_until_release
+                else Attempt.ResultVisibility.VISIBLE
+            )
+            attempt.save()
+        return attempt
+
+
+class AttemptResultSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Attempt
+        fields = [
+            "id",
+            "status",
+            "final_score",
+            "is_passed",
+            "result_visibility_state",
+        ]
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        if instance.result_visibility_state != Attempt.ResultVisibility.VISIBLE:
+            data.pop("final_score", None)
+            data.pop("is_passed", None)
+        return data
 
 
 class AnswerSerializer(serializers.ModelSerializer):

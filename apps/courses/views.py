@@ -4,6 +4,7 @@ from django.core.files.storage import default_storage
 from django.db import connection
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from drf_spectacular.utils import extend_schema
 from rest_framework import status
 from rest_framework.exceptions import ValidationError
@@ -13,9 +14,15 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import Exam, Question, QuestionFile
-from .permissions import IsExamAdmin
+from .models import Attempt, Exam, ExamAssignment, Question, QuestionFile
+from .permissions import IsAttemptOwner, IsEnrolledInCourse, IsExamAdmin
 from .serializers import (
+    ActiveExamSerializer,
+    AnswerAutoSaveSerializer,
+    AttemptDetailSerializer,
+    AttemptResultSerializer,
+    AttemptStartSerializer,
+    AttemptSubmitSerializer,
     ExamAssignmentSerializer,
     ExamSerializer,
     MCQOptionSerializer,
@@ -264,3 +271,120 @@ class ExamAssignmentListView(APIView):
         page = paginator.paginate_queryset(qs, request)
         serializer = ExamAssignmentSerializer(page, many=True)
         return paginator.get_paginated_response(serializer.data)
+
+
+@extend_schema(tags=["Attempts"])
+class ActiveExamsListView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        now = timezone.now()
+        assignments = ExamAssignment.objects.filter(
+            course__participants=request.user,
+            start_at__lte=now,
+            end_at__gte=now,
+        ).select_related("exam", "course")
+        items = []
+        for assignment in assignments:
+            attempt = Attempt.objects.filter(
+                user=request.user,
+                exam=assignment.exam,
+                course=assignment.course,
+            ).first()
+            items.append(
+                {
+                    "exam_id": assignment.exam_id,
+                    "course_id": assignment.course_id,
+                    "title": assignment.exam.title,
+                    "start_at": assignment.start_at,
+                    "end_at": assignment.end_at,
+                    "started": bool(attempt),
+                    "attempt_status": attempt.status if attempt else None,
+                    "expires_at": attempt.expires_at if attempt else None,
+                }
+            )
+        serializer = ActiveExamSerializer(items, many=True)
+        return Response(serializer.data)
+
+
+@extend_schema(tags=["Attempts"])
+class AttemptStartView(APIView):
+    permission_classes = [IsAuthenticated, IsEnrolledInCourse]
+
+    def post(self, request, course_id, exam_id):
+        exam = get_object_or_404(Exam, pk=exam_id)
+        data = {"exam": str(exam_id), "course": str(course_id)}
+        serializer = AttemptStartSerializer(
+            data=data, context={"request": request}
+        )
+        try:
+            serializer.is_valid(raise_exception=True)
+        except ValidationError as exc:
+            if "attempt_exists" in exc.detail:
+                existing = Attempt.objects.get(
+                    user=request.user, exam=exam, course_id=course_id
+                )
+                detail = AttemptDetailSerializer(existing)
+                return Response(detail.data, status=status.HTTP_409_CONFLICT)
+            raise
+        attempt = serializer.save()
+        detail = AttemptDetailSerializer(attempt)
+        return Response(detail.data, status=status.HTTP_201_CREATED)
+
+
+@extend_schema(tags=["Attempts"])
+class AttemptDetailView(APIView):
+    permission_classes = [IsAuthenticated, IsAttemptOwner]
+
+    def get(self, request, attempt_id):
+        attempt = get_object_or_404(Attempt, pk=attempt_id)
+        self.check_object_permissions(request, attempt)
+        serializer = AttemptDetailSerializer(attempt)
+        return Response(serializer.data)
+
+
+@extend_schema(tags=["Attempts"])
+class AnswerAutosaveView(APIView):
+    permission_classes = [IsAuthenticated, IsAttemptOwner]
+
+    def put(self, request, attempt_id, question_id):
+        attempt = get_object_or_404(Attempt, pk=attempt_id)
+        self.check_object_permissions(request, attempt)
+        if timezone.now() >= attempt.expires_at:
+            return Response({"detail": "attempt_expired"}, status=400)
+        question = get_object_or_404(
+            Question, pk=question_id, exam=attempt.exam
+        )
+        serializer = AnswerAutoSaveSerializer(
+            data=request.data,
+            context={"attempt": attempt, "question": question},
+        )
+        serializer.is_valid(raise_exception=True)
+        data = serializer.save()
+        return Response(data)
+
+
+@extend_schema(tags=["Attempts"])
+class AttemptSubmitView(APIView):
+    permission_classes = [IsAuthenticated, IsAttemptOwner]
+
+    def post(self, request, attempt_id):
+        attempt = get_object_or_404(Attempt, pk=attempt_id)
+        self.check_object_permissions(request, attempt)
+        serializer = AttemptSubmitSerializer(
+            data=request.data, context={"attempt": attempt}
+        )
+        serializer.is_valid(raise_exception=True)
+        attempt = serializer.save()
+        return Response(AttemptDetailSerializer(attempt).data)
+
+
+@extend_schema(tags=["Attempts"])
+class AttemptResultView(APIView):
+    permission_classes = [IsAuthenticated, IsAttemptOwner]
+
+    def get(self, request, attempt_id):
+        attempt = get_object_or_404(Attempt, pk=attempt_id)
+        self.check_object_permissions(request, attempt)
+        serializer = AttemptResultSerializer(attempt)
+        return Response(serializer.data)
