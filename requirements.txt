@@ -5,6 +5,7 @@ python-dotenv
 psycopg[binary]
 redis
 PyJWT
+django-cors-headers
 
 # Dev
 devtools

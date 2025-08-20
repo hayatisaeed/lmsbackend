@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
 from typing import List
+from urllib.parse import urlparse
 
 from dotenv import load_dotenv
 
@@ -9,7 +10,9 @@ load_dotenv()
 BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "change-me")
 DEBUG = os.getenv("DEBUG", "1") == "1"
-ALLOWED_HOSTS: List[str] = os.getenv("ALLOWED_HOSTS", "*").split(",")
+ALLOWED_HOSTS: List[str] = [
+    h for h in os.getenv("ALLOWED_HOSTS", "").split(",") if h
+] or ["*"]
 
 INSTALLED_APPS = [
     "django.contrib.admin",
@@ -18,12 +21,14 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    "corsheaders",
     "rest_framework",
     "drf_spectacular",
     "apps.users",
 ]
 
 MIDDLEWARE = [
+    "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -53,10 +58,34 @@ TEMPLATES = [
 
 WSGI_APPLICATION = "config.wsgi.application"
 
-DATABASES = {
+
+def parse_db_url(url: str) -> dict:
+    parsed = urlparse(url)
+    if parsed.scheme in {"postgres", "postgresql"}:
+        return {
+            "ENGINE": "django.db.backends.postgresql",
+            "NAME": parsed.path.lstrip("/"),
+            "USER": parsed.username,
+            "PASSWORD": parsed.password,
+            "HOST": parsed.hostname,
+            "PORT": parsed.port,
+        }
+    if parsed.scheme == "sqlite":
+        return {
+            "ENGINE": "django.db.backends.sqlite3",
+            "NAME": parsed.path or ":memory:",
+        }
+    raise ValueError("Unsupported DB scheme")
+
+
+DATABASES = {"default": parse_db_url(os.getenv("DB_URL", "sqlite:///db.sqlite3"))}
+
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+
+CACHES = {
     "default": {
-        "ENGINE": "django.db.backends.sqlite3",
-        "NAME": BASE_DIR / "db.sqlite3",
+        "BACKEND": "django.core.cache.backends.redis.RedisCache",
+        "LOCATION": REDIS_URL,
     }
 }
 
@@ -71,6 +100,18 @@ USE_TZ = True
 STATIC_URL = "static/"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+CSRF_COOKIE_NAME = os.getenv("CSRF_COOKIE_NAME", "mh_csrf")
+CSRF_COOKIE_SECURE = True
+CSRF_COOKIE_SAMESITE = os.getenv("COOKIE_SAMESITE", "Lax")
+SESSION_COOKIE_SECURE = True
+SESSION_COOKIE_SAMESITE = os.getenv("COOKIE_SAMESITE", "Lax")
+
+CORS_ALLOW_CREDENTIALS = True
+CORS_ALLOWED_ORIGINS: List[str] = [
+    o for o in os.getenv("ALLOWED_ORIGINS", "").split(",") if o
+]
+CSRF_TRUSTED_ORIGINS = CORS_ALLOWED_ORIGINS
 
 REST_FRAMEWORK = {
     "DEFAULT_RENDERER_CLASSES": ["rest_framework.renderers.JSONRenderer"],
