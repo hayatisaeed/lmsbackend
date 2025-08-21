@@ -1,7 +1,10 @@
+from decimal import Decimal
+
 import redis
 from django.conf import settings
 from django.core.files.storage import default_storage
 from django.db import connection
+from django.db.models import Sum
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -20,10 +23,12 @@ from .models import (
     Attempt,
     Exam,
     ExamAssignment,
+    GraderAssignment,
+    GradingItem,
     Question,
     QuestionFile,
 )
-from .permissions import IsAttemptOwner, IsEnrolledInCourse, IsExamAdmin
+from .permissions import IsAttemptOwner, IsEnrolledInCourse, IsExamAdmin, IsGrader
 from .serializers import (
     ActiveExamSerializer,
     AnswerAutoSaveSerializer,
@@ -33,6 +38,8 @@ from .serializers import (
     AttemptSubmitSerializer,
     ExamAssignmentSerializer,
     ExamSerializer,
+    GraderAssignmentSerializer,
+    GradingItemSerializer,
     MCQOptionSerializer,
     QuestionSerializer,
 )
@@ -465,3 +472,126 @@ class AttemptResultView(APIView):
         self.check_object_permissions(request, attempt)
         serializer = AttemptResultSerializer(attempt)
         return Response(serializer.data)
+
+
+@extend_schema(tags=["Exams"])
+class GraderAssignmentView(APIView):
+    permission_classes = [IsAuthenticated, IsExamAdmin]
+
+    def post(self, request, exam_id):
+        exam = get_object_or_404(Exam, pk=exam_id)
+        self.check_object_permissions(request, exam)
+        payload = {**request.data, "exam": exam.id}
+        serializer = GraderAssignmentSerializer(data=payload)
+        serializer.is_valid(raise_exception=True)
+        assignment, created = GraderAssignment.objects.get_or_create(
+            exam=exam,
+            teacher=serializer.validated_data["teacher"],
+            defaults={"scope": serializer.validated_data["scope"]},
+        )
+        status_code = status.HTTP_201_CREATED if created else status.HTTP_200_OK
+        return Response(GraderAssignmentSerializer(assignment).data, status=status_code)
+
+
+@extend_schema(tags=["Grading"])
+class GradingQueueView(APIView):
+    permission_classes = [IsAuthenticated, IsGrader]
+
+    def get(self, request, exam_id):
+        exam = get_object_or_404(Exam, pk=exam_id)
+        self.check_object_permissions(request, exam)
+        attempts = exam.attempts.filter(status=Attempt.Status.SUBMITTED)
+        data = [
+            {
+                "attempt_id": str(a.id),
+                "user_id": str(a.user_id),
+                "status": a.status,
+            }
+            for a in attempts
+        ]
+        return Response(data)
+
+
+@extend_schema(tags=["Grading"], request=GradingItemSerializer)
+class GradeAnswerView(APIView):
+    permission_classes = [IsAuthenticated, IsGrader]
+
+    def post(self, request, answer_id):
+        answer = get_object_or_404(Answer, pk=answer_id)
+        exam = answer.question.exam
+        self.check_object_permissions(request, exam)
+        payload = {
+            **request.data,
+            "answer": answer.id,
+            "grader": request.user.id,
+        }
+        serializer = GradingItemSerializer(data=payload)
+        serializer.is_valid(raise_exception=True)
+        item, _ = GradingItem.objects.update_or_create(
+            answer=answer,
+            grader=request.user,
+            defaults={
+                "score_awarded": serializer.validated_data.get(
+                    "score_awarded", Decimal("0.0")
+                ),
+                "feedback": serializer.validated_data.get("feedback", ""),
+                "status": GradingItem.Status.GRADED,
+                "graded_at": timezone.now(),
+            },
+        )
+        return Response(
+            {"status": item.status, "graded_at": item.graded_at},
+            status=status.HTTP_200_OK,
+        )
+
+
+@extend_schema(tags=["Grading"], request=None)
+class FinalizeAttemptView(APIView):
+    permission_classes = [IsAuthenticated, IsGrader]
+
+    def post(self, request, attempt_id):
+        attempt = get_object_or_404(Attempt, pk=attempt_id)
+        self.check_object_permissions(request, attempt.exam)
+        graded_items = GradingItem.objects.filter(
+            answer__attempt=attempt, status=GradingItem.Status.GRADED
+        )
+        if graded_items.count() < attempt.answers.count():
+            raise ValidationError("Not all answers graded")
+        total = (
+            graded_items.aggregate(sum=Sum("score_awarded"))["sum"]
+            or Decimal("0.0")
+        )
+        attempt.final_score = total
+        attempt.is_passed = total >= attempt.exam.min_accept_score
+        attempt.status = Attempt.Status.GRADED
+        attempt.save(update_fields=["final_score", "is_passed", "status"])
+        return Response({"final_score": str(total)})
+
+
+@extend_schema(tags=["Grading"], request=None)
+class ReleaseAttemptView(APIView):
+    permission_classes = [IsAuthenticated, IsExamAdmin]
+
+    def post(self, request, attempt_id):
+        attempt = get_object_or_404(Attempt, pk=attempt_id)
+        self.check_object_permissions(request, attempt.exam)
+        if attempt.status != Attempt.Status.GRADED:
+            raise ValidationError("Attempt not graded")
+        attempt.status = Attempt.Status.RELEASED
+        attempt.result_visibility_state = Attempt.ResultVisibility.VISIBLE
+        attempt.save(update_fields=["status", "result_visibility_state"])
+        return Response({"status": attempt.status})
+
+
+@extend_schema(tags=["Grading"], request=None)
+class BulkReleaseExamResultsView(APIView):
+    permission_classes = [IsAuthenticated, IsExamAdmin]
+
+    def post(self, request, exam_id):
+        exam = get_object_or_404(Exam, pk=exam_id)
+        self.check_object_permissions(request, exam)
+        updated = exam.attempts.filter(status=Attempt.Status.GRADED).update(
+            status=Attempt.Status.RELEASED,
+            result_visibility_state=Attempt.ResultVisibility.VISIBLE,
+        )
+        return Response({"released": updated})

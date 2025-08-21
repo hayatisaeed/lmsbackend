@@ -58,6 +58,36 @@ urlpatterns = [
         views.ExamAssignmentListView.as_view(),
         name="exam-assignments",
     ),
+    path(
+        "exams/<uuid:exam_id>/graders/assign/",
+        views.GraderAssignmentView.as_view(),
+        name="exam-grader-assign",
+    ),
+    path(
+        "exams/<uuid:exam_id>/grading-queue/",
+        views.GradingQueueView.as_view(),
+        name="grading-queue",
+    ),
+    path(
+        "answers/<uuid:answer_id>/grade/",
+        views.GradeAnswerView.as_view(),
+        name="answer-grade",
+    ),
+    path(
+        "attempts/<uuid:attempt_id>/finalize/",
+        views.FinalizeAttemptView.as_view(),
+        name="attempt-finalize",
+    ),
+    path(
+        "attempts/<uuid:attempt_id>/release/",
+        views.ReleaseAttemptView.as_view(),
+        name="attempt-release",
+    ),
+    path(
+        "exams/<uuid:exam_id>/results/release-bulk/",
+        views.BulkReleaseExamResultsView.as_view(),
+        name="exam-results-release-bulk",
+    ),
     path("my/active-exams/", views.ActiveExamsListView.as_view(), name="active-exams"),
     path(
         "<uuid:course_id>/exams/<uuid:exam_id>/attempts/start/",
