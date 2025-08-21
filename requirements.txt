@@ -1,6 +1,10 @@
 Django>=4.2,<5.0
 djangorestframework>=3.14,<4.0
 drf-spectacular>=0.26,<0.27
+django-filter
+djangorestframework-simplejwt
+django-storages[boto3]
+celery
 python-dotenv
 psycopg[binary]
 redis

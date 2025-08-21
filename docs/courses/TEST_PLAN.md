@@ -70,10 +70,12 @@ Covers functionality, integration, security, and performance for **Exams** domai
     - Last saved draft promoted to final.
         
 - **File Uploads**
-    
+
     - Accept image/pdf.
-        
+
     - Reject other formats, oversized files.
+
+    - Delete draft answer files only when attempt in progress; enforce ownership, URL match, and idempotency.
         
 - **Grading**
     
