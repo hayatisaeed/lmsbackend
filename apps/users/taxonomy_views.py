@@ -1,4 +1,5 @@
 from django.db.models import Count, Q
+from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -12,7 +13,15 @@ from .serializers import (
 )
 
 
+@extend_schema(tags=["Taxonomy"])
 class EducationalLevelListView(APIView):
+    @extend_schema(
+        parameters=[
+            OpenApiParameter("q", str, OpenApiParameter.QUERY, required=False),
+            OpenApiParameter("ordering", str, OpenApiParameter.QUERY, required=False),
+        ],
+        responses={200: EducationalLevelSerializer(many=True)},
+    )
     def get(self, request):
         qs = EducationalLevel.objects.all()
         q = request.query_params.get("q")
@@ -26,7 +35,19 @@ class EducationalLevelListView(APIView):
         return Response(serializer.data)
 
 
+@extend_schema(tags=["Taxonomy"])
 class StudyBranchListView(APIView):
+    @extend_schema(
+        parameters=[
+            OpenApiParameter("level", str, OpenApiParameter.QUERY, required=True),
+            OpenApiParameter("active", bool, OpenApiParameter.QUERY, required=False),
+        ],
+        responses={
+            200: StudyBranchSerializer(many=True),
+            400: OpenApiResponse(description="level is required"),
+            404: OpenApiResponse(description="level not found"),
+        },
+    )
     def get(self, request):
         level_id = request.query_params.get("level")
         if not level_id:
@@ -49,7 +70,16 @@ class StudyBranchListView(APIView):
         return Response(serializer.data)
 
 
+@extend_schema(tags=["Taxonomy"])
 class OlympiadListView(APIView):
+    @extend_schema(
+        parameters=[
+            OpenApiParameter(
+                "published", bool, OpenApiParameter.QUERY, required=False
+            ),
+        ],
+        responses={200: OlympiadSerializer(many=True)},
+    )
     def get(self, request):
         published = request.query_params.get("published")
         qs = Olympiad.objects.all()
@@ -62,7 +92,19 @@ class OlympiadListView(APIView):
         return Response(serializer.data)
 
 
+@extend_schema(tags=["Taxonomy"])
 class LocationListView(APIView):
+    @extend_schema(
+        parameters=[
+            OpenApiParameter("q", str, OpenApiParameter.QUERY, required=False),
+            OpenApiParameter("state", str, OpenApiParameter.QUERY, required=False),
+            OpenApiParameter("province", str, OpenApiParameter.QUERY, required=False),
+            OpenApiParameter("all", bool, OpenApiParameter.QUERY, required=False),
+        ],
+        responses={
+            200: OpenApiResponse(description="List of provinces or cities"),
+        },
+    )
     def get(self, request):
         q = request.query_params.get("q")
         state_param = request.query_params.get("state") or request.query_params.get(
