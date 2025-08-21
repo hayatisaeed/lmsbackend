@@ -1,6 +1,7 @@
 from django.conf import settings
 from django.core.cache import cache
 from django.middleware.csrf import get_token
+from drf_spectacular.utils import OpenApiResponse, extend_schema
 from rest_framework import status
 from rest_framework.exceptions import APIException
 from rest_framework.permissions import AllowAny
@@ -31,9 +32,17 @@ def _incr(key: str, ttl: int) -> int:
         return 1
 
 
+@extend_schema(tags=["Auth"])
 class RequestOTPView(APIView):
     permission_classes = [AllowAny]
 
+    @extend_schema(
+        request=RequestOTPSerializer,
+        responses={
+            200: OpenApiResponse(description="OTP sent"),
+            429: OpenApiResponse(description="Too many requests"),
+        },
+    )
     def post(self, request):
         serializer = RequestOTPSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -58,9 +67,14 @@ class RequestOTPView(APIView):
         )
 
 
+@extend_schema(tags=["Auth"])
 class VerifyOTPView(APIView):
     permission_classes = [AllowAny]
 
+    @extend_schema(
+        request=VerifyOTPSerializer,
+        responses={200: OpenApiResponse(description="OTP verified")},
+    )
     def post(self, request):
         serializer = VerifyOTPSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -115,9 +129,18 @@ class VerifyOTPView(APIView):
         return response
 
 
+@extend_schema(tags=["Auth"])
 class RefreshView(APIView):
     permission_classes = [AllowAny]
 
+    @extend_schema(
+        responses={
+            200: OpenApiResponse(description="Token refreshed"),
+            401: OpenApiResponse(description="Invalid refresh token"),
+            409: OpenApiResponse(description="Token family revoked"),
+            419: OpenApiResponse(description="Rotation required"),
+        }
+    )
     def post(self, request):
         token = request.COOKIES.get(settings.REFRESH_COOKIE_NAME)
         if not token:
@@ -163,7 +186,9 @@ class RefreshView(APIView):
         return response
 
 
+@extend_schema(tags=["Auth"])
 class LogoutView(APIView):
+    @extend_schema(responses={204: OpenApiResponse(description="Logged out")})
     def post(self, request):
         token = request.COOKIES.get(settings.REFRESH_COOKIE_NAME)
         if token:
@@ -178,7 +203,11 @@ class LogoutView(APIView):
         return response
 
 
+@extend_schema(tags=["Auth"])
 class SessionView(APIView):
+    @extend_schema(
+        responses={200: OpenApiResponse(description="Current session info")}
+    )
     def get(self, request):
         user: User = request.user  # type: ignore
         data = {

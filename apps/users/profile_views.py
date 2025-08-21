@@ -1,3 +1,4 @@
+from drf_spectacular.utils import OpenApiResponse, extend_schema
 from prometheus_client import Counter, Histogram
 from rest_framework import serializers
 from rest_framework.permissions import IsAuthenticated
@@ -38,9 +39,19 @@ profile_completed_total = Counter(
 )  # pragma: no cover
 
 
+@extend_schema(tags=["Profile"])
 class IdentityView(APIView):
     permission_classes = [IsAuthenticated]
 
+    @extend_schema(
+        request=IdentitySerializer,
+        responses={
+            200: IdentitySerializer,
+            400: OpenApiResponse(description="Validation error"),
+            429: OpenApiResponse(description="Too many requests"),
+            502: OpenApiResponse(description="Identity provider error"),
+        },
+    )
     def post(self, request):
         serializer = IdentitySerializer(data=request.data, context={"request": request})
         if not serializer.is_valid():  # pragma: no cover
@@ -71,9 +82,17 @@ class IdentityView(APIView):
             identity_provider_latency_ms.observe((time.time() - start))
 
 
+@extend_schema(tags=["Profile"])
 class EducationView(APIView):
     permission_classes = [IsAuthenticated]
 
+    @extend_schema(
+        request=EducationSerializer,
+        responses={
+            200: EducationSerializer,
+            400: OpenApiResponse(description="Validation error"),
+        },
+    )
     def post(self, request):
         serializer = EducationSerializer(
             data=request.data, context={"request": request}
@@ -87,9 +106,17 @@ class EducationView(APIView):
         return Response({"error": serializer.errors}, status=400)  # pragma: no cover
 
 
+@extend_schema(tags=["Profile"])
 class LocationView(APIView):
     permission_classes = [IsAuthenticated]
 
+    @extend_schema(
+        request=LocationSerializer,
+        responses={
+            200: LocationSerializer,
+            400: OpenApiResponse(description="Validation error"),
+        },
+    )
     def post(self, request):
         serializer = LocationSerializer(data=request.data, context={"request": request})
         if serializer.is_valid():
@@ -97,9 +124,17 @@ class LocationView(APIView):
         return Response({"error": serializer.errors}, status=400)  # pragma: no cover
 
 
+@extend_schema(tags=["Profile"])
 class ParentView(APIView):
     permission_classes = [IsAuthenticated]
 
+    @extend_schema(
+        request=ParentSerializer,
+        responses={
+            200: ParentSerializer,
+            400: OpenApiResponse(description="Validation error"),
+        },
+    )
     def post(self, request):
         serializer = ParentSerializer(data=request.data, context={"request": request})
         if serializer.is_valid():
@@ -108,9 +143,17 @@ class ParentView(APIView):
         return Response({"error": serializer.errors}, status=400)  # pragma: no cover
 
 
+@extend_schema(tags=["Profile"])
 class ParentVerifyView(APIView):
     permission_classes = [IsAuthenticated]
 
+    @extend_schema(
+        request=ParentVerifySerializer,
+        responses={
+            200: ParentVerifySerializer,
+            400: OpenApiResponse(description="Validation error"),
+        },
+    )
     def post(self, request):
         serializer = ParentVerifySerializer(
             data=request.data, context={"request": request}
@@ -126,9 +169,13 @@ class ParentVerifyView(APIView):
         return Response({"error": serializer.errors}, status=400)  # pragma: no cover
 
 
+@extend_schema(tags=["Profile"])
 class ProfileView(APIView):
     permission_classes = [IsAuthenticated]
 
+    @extend_schema(
+        responses={200: OpenApiResponse(description="User profile data")}
+    )
     def get(self, request):
         user = request.user
         profile = {}
@@ -177,8 +224,14 @@ class ProfileView(APIView):
         return Response(profile)
 
 
+@extend_schema(tags=["Profile"])
 class ProfileCompletionView(APIView):
     permission_classes = [IsAuthenticated]
 
+    @extend_schema(
+        responses={
+            200: OpenApiResponse(description="Profile completion data")
+        }
+    )
     def get(self, request):
         return Response(request.user.profile_completion)
