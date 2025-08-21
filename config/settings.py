@@ -1,4 +1,5 @@
 import os
+from datetime import timedelta
 from pathlib import Path
 from typing import List
 from urllib.parse import urlparse
@@ -24,7 +25,10 @@ INSTALLED_APPS = [
     "corsheaders",
     "rest_framework",
     "drf_spectacular",
+    "django_filters",
+    "storages",
     "apps.users",
+    "apps.courses",
 ]
 
 MIDDLEWARE = [
@@ -82,6 +86,12 @@ DATABASES = {"default": parse_db_url(os.getenv("DB_URL", "sqlite:///db.sqlite3")
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
+CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", REDIS_URL)
+CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND", REDIS_URL)
+CELERY_TASK_ALWAYS_EAGER = (
+    os.getenv("CELERY_TASK_ALWAYS_EAGER", "false").lower() == "true"
+)
+
 CACHES = {
     "default": {
         "BACKEND": "django.core.cache.backends.redis.RedisCache",
@@ -102,6 +112,25 @@ STATIC_URL = "static/"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 AUTH_USER_MODEL = "users.User"
+
+DEFAULT_FILE_STORAGE = os.getenv(
+    "DEFAULT_FILE_STORAGE",
+    "django.core.files.storage.FileSystemStorage",
+)
+AWS_STORAGE_BUCKET_NAME = os.getenv("AWS_STORAGE_BUCKET_NAME", "")
+AWS_S3_ENDPOINT_URL = os.getenv("AWS_S3_ENDPOINT_URL")
+AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
+AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
+AWS_S3_REGION_NAME = os.getenv("AWS_S3_REGION_NAME")
+AWS_QUERYSTRING_AUTH = os.getenv("AWS_QUERYSTRING_AUTH", "true").lower() == "true"
+MAX_UPLOAD_SIZE_MB = int(os.getenv("MAX_UPLOAD_SIZE_MB", "10"))
+ALLOWED_ANSWER_MIME = [
+    m
+    for m in os.getenv(
+        "ALLOWED_ANSWER_MIME", "image/png,image/jpeg,application/pdf"
+    ).split(",")
+    if m
+]
 
 CSRF_COOKIE_NAME = os.getenv("CSRF_COOKIE_NAME", "mh_csrf")
 CSRF_COOKIE_SECURE = True
@@ -144,11 +173,31 @@ REST_FRAMEWORK = {
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
     "DEFAULT_AUTHENTICATION_CLASSES": [
         "apps.users.auth.JWTAuthentication",
+        "rest_framework_simplejwt.authentication.JWTAuthentication",
     ],
+    "DEFAULT_FILTER_BACKENDS": ["django_filters.rest_framework.DjangoFilterBackend"],
+    "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
+    "PAGE_SIZE": 20,
+    "DEFAULT_THROTTLE_RATES": {
+        "courses_answer_file_delete": "10/min",
+    },
 }
 
 SPECTACULAR_SETTINGS = {
-    "TITLE": "MentorHub API",
+    "TITLE": "Courses/Exams API",
     "VERSION": "1.0.0",
     "SERVE_INCLUDE_SCHEMA": False,
+}
+
+SIMPLE_JWT = {
+    "ACCESS_TOKEN_LIFETIME": timedelta(
+        minutes=int(os.getenv("JWT_ACCESS_LIFETIME_MIN", "30"))
+    ),
+    "REFRESH_TOKEN_LIFETIME": timedelta(
+        days=int(os.getenv("JWT_REFRESH_LIFETIME_DAYS", "7"))
+    ),
+    "SIGNING_KEY": JWT_SIGNING_KEY,
+    "ALGORITHM": JWT_ALG,
+    "AUDIENCE": JWT_AUDIENCE,
+    "ISSUER": JWT_ISSUER,
 }

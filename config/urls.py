@@ -16,4 +16,5 @@ urlpatterns = [
     ),
     path("api/v1/metrics", views.metrics, name="metrics"),
     path("api/v1/", include("apps.users.urls")),
+    path("api/v1/courses/", include("apps.courses.urls")),
 ]
