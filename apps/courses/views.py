@@ -7,14 +7,22 @@ from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from drf_spectacular.utils import extend_schema
 from rest_framework import status
-from rest_framework.exceptions import ValidationError
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.parsers import MultiPartParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import Attempt, Exam, ExamAssignment, Question, QuestionFile
+from .models import (
+    Answer,
+    AnswerFile,
+    Attempt,
+    Exam,
+    ExamAssignment,
+    Question,
+    QuestionFile,
+)
 from .permissions import IsAttemptOwner, IsEnrolledInCourse, IsExamAdmin
 from .serializers import (
     ActiveExamSerializer,
@@ -228,6 +236,14 @@ class QuestionFileUploadView(APIView):
             status=status.HTTP_201_CREATED,
         )
 
+@extend_schema(tags=["Files"])
+class QuestionAssetUploadView(QuestionFileUploadView):
+    def post(self, request):
+        question_id = request.data.get("question_id")
+        if not question_id:
+            raise ValidationError("question_id_required")
+        return super().post(request, question_id)
+
 
 @extend_schema(tags=["Questions"])
 class QuestionFileDeleteView(APIView):
@@ -241,6 +257,67 @@ class QuestionFileDeleteView(APIView):
             raise ValidationError("exam_locked")
         instance.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+@extend_schema(tags=["Files"])
+class AnswerFileUploadView(APIView):
+    parser_classes = [MultiPartParser]
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        answer_id = request.data.get("answer_id")
+        upload = request.FILES.get("file")
+        if not answer_id or not upload:
+            raise ValidationError("answer_id_and_file_required")
+        answer = get_object_or_404(Answer, pk=answer_id)
+        if answer.attempt.user_id != request.user.id:
+            raise PermissionDenied()
+        question = answer.question
+        if question.type not in [Question.Type.FILE, Question.Type.TEXT_OR_FILE]:
+            raise ValidationError("question_not_file")
+        if answer.files.count() >= question.answer_max_files:
+            raise ValidationError("max_files_exceeded")
+        ctype = upload.content_type or ""
+        if not ctype.startswith("image/"):
+            if not (
+                ctype == "application/pdf"
+                and question.answer_accepts_file_types
+                == Question.FileTypes.IMAGES_AND_PDF
+            ):
+                raise ValidationError("invalid_type")
+        max_bytes = settings.MAX_UPLOAD_SIZE_MB * 1024 * 1024
+        if upload.size > max_bytes:
+            return Response(status=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE)
+        path = default_storage.save(upload.name, upload)
+        file_url = default_storage.url(path)
+        af = AnswerFile.objects.create(
+            answer=answer, title=upload.name, file=file_url
+        )
+        return Response(
+            {"file_id": str(af.id), "url": af.file},
+            status=status.HTTP_201_CREATED,
+        )
+
+@extend_schema(tags=["Files"])
+class FileServeView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, pk):
+        try:
+            qf = QuestionFile.objects.get(pk=pk)
+            if qf.question.exam.created_by_id != request.user.id:
+                raise PermissionDenied()
+            return Response(status=status.HTTP_302_FOUND, headers={"Location": qf.file})
+        except QuestionFile.DoesNotExist:
+            af = get_object_or_404(AnswerFile, pk=pk)
+            attempt = af.answer.attempt
+            if (
+                attempt.user_id != request.user.id
+                and attempt.exam.created_by_id != request.user.id
+            ):
+                raise PermissionDenied() from None
+            return Response(
+                status=status.HTTP_302_FOUND, headers={"Location": af.file}
+            )
 
 
 @extend_schema(tags=["ExamAssignments"])

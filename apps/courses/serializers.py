@@ -304,18 +304,43 @@ class AnswerAutoSaveSerializer(serializers.Serializer):
 
     def validate(self, attrs):
         question: Question = self.context["question"]
+        attempt: Attempt = self.context["attempt"]
         payload = attrs["payload"]
+        answer = Answer.objects.filter(attempt=attempt, question=question).first()
         if question.type == Question.Type.MCQ:
             if not isinstance(payload, list):
                 raise serializers.ValidationError("invalid_payload")
             option_ids = {str(opt.id) for opt in question.options.all()}
             if not payload or any(str(p) not in option_ids for p in payload):
                 raise serializers.ValidationError("invalid_option")
-        elif question.type in [Question.Type.TEXT, Question.Type.TEXT_OR_FILE]:
+        elif question.type == Question.Type.TEXT:
             if not isinstance(payload, str):
                 raise serializers.ValidationError("invalid_payload")
         elif question.type == Question.Type.FILE:
-            raise serializers.ValidationError("files_not_supported")
+            if not isinstance(payload, list):
+                raise serializers.ValidationError("invalid_payload")
+            if not answer:
+                raise serializers.ValidationError("invalid_file")
+            file_ids = {str(f.id) for f in answer.files.all()}
+            if not payload or any(str(p) not in file_ids for p in payload):
+                raise serializers.ValidationError("invalid_file")
+            if len(payload) > question.answer_max_files:
+                raise serializers.ValidationError("max_files_exceeded")
+        elif question.type == Question.Type.TEXT_OR_FILE:
+            if isinstance(payload, str):
+                pass
+            elif isinstance(payload, list):
+                if not answer:
+                    raise serializers.ValidationError("invalid_file")
+                file_ids = {str(f.id) for f in answer.files.all()}
+                if not payload or any(str(p) not in file_ids for p in payload):
+                    raise serializers.ValidationError("invalid_file")
+                if len(payload) > question.answer_max_files:
+                    raise serializers.ValidationError("max_files_exceeded")
+            else:
+                raise serializers.ValidationError("invalid_payload")
+        else:
+            raise serializers.ValidationError("invalid_payload")
         return attrs
 
     def save(self):

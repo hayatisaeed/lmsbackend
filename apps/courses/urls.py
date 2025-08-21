@@ -38,6 +38,17 @@ urlpatterns = [
         name="question-file-delete",
     ),
     path(
+        "files/upload/question-asset/",
+        views.QuestionAssetUploadView.as_view(),
+        name="question-asset-upload",
+    ),
+    path(
+        "files/upload/answer/",
+        views.AnswerFileUploadView.as_view(),
+        name="answer-file-upload",
+    ),
+    path("files/<uuid:pk>/", views.FileServeView.as_view(), name="file-serve"),
+    path(
         "exams/<uuid:exam_id>/assign-to-course/",
         views.ExamAssignView.as_view(),
         name="exam-assign",
