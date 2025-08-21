@@ -1,3 +1,4 @@
+import logging
 from decimal import Decimal
 
 import redis
@@ -12,7 +13,7 @@ from drf_spectacular.utils import extend_schema
 from rest_framework import status
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.pagination import PageNumberPagination
-from rest_framework.parsers import MultiPartParser
+from rest_framework.parsers import JSONParser, MultiPartParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -36,6 +37,7 @@ from .serializers import (
     AttemptResultSerializer,
     AttemptStartSerializer,
     AttemptSubmitSerializer,
+    DraftFileDeleteSerializer,
     ExamAssignmentSerializer,
     ExamSerializer,
     GraderAssignmentSerializer,
@@ -217,7 +219,7 @@ class MCQOptionCreateView(APIView):
 
 @extend_schema(tags=["Questions"])
 class QuestionFileUploadView(APIView):
-    parser_classes = [MultiPartParser]
+    parser_classes = [MultiPartParser, JSONParser]
     permission_classes = [IsAuthenticated, IsExamAdmin]
 
     def post(self, request, question_id):
@@ -267,7 +269,7 @@ class QuestionFileDeleteView(APIView):
 
 @extend_schema(tags=["Files"])
 class AnswerFileUploadView(APIView):
-    parser_classes = [MultiPartParser]
+    parser_classes = [MultiPartParser, JSONParser]
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
@@ -303,6 +305,42 @@ class AnswerFileUploadView(APIView):
             {"file_id": str(af.id), "url": af.file},
             status=status.HTTP_201_CREATED,
         )
+
+    def _storage_path(self, url: str) -> str:
+        from urllib.parse import urlparse
+
+        path = urlparse(url).path
+        media_url = settings.MEDIA_URL
+        if path.startswith(media_url):
+            path = path[len(media_url) :]
+        return path.lstrip("/")
+
+    @extend_schema(request=DraftFileDeleteSerializer, responses={204: None})
+    def delete(self, request):
+        serializer = DraftFileDeleteSerializer(
+            data=request.data, context={"request": request}
+        )
+        serializer.is_valid(raise_exception=True)
+        af = serializer.validated_data["answer_file"]
+        storage_path = self._storage_path(af.file)
+        try:
+            default_storage.delete(storage_path)
+        except Exception:  # pragma: no cover - ignore storage errors
+            pass
+        attempt = af.answer.attempt
+        question_id = af.answer.question_id
+        file_id = str(af.id)
+        af.delete()
+        logging.getLogger(__name__).info(
+            "AnswerFileDeleted",
+            extra={
+                "attempt_id": str(attempt.id),
+                "question_id": str(question_id),
+                "file_id": file_id,
+                "by_user": request.user.id,
+            },
+        )
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 @extend_schema(tags=["Files"])
 class FileServeView(APIView):

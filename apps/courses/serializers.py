@@ -3,7 +3,7 @@ from decimal import Decimal
 
 from django.utils import timezone
 from rest_framework import serializers
-from rest_framework.exceptions import PermissionDenied
+from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 
 from .models import (
     Answer,
@@ -431,6 +431,31 @@ class AnswerFileSerializer(serializers.ModelSerializer):
     class Meta:
         model = AnswerFile
         fields = "__all__"
+
+
+class DraftFileDeleteSerializer(serializers.Serializer):
+    file_id = serializers.UUIDField()
+    url = serializers.CharField()
+
+    def validate(self, attrs):
+        request = self.context["request"]
+        file_id = attrs["file_id"]
+        url = attrs["url"]
+        try:
+            af = AnswerFile.objects.select_related(
+                "answer__attempt", "answer__question"
+            ).get(pk=file_id)
+        except AnswerFile.DoesNotExist as exc:  # pragma: no cover - tested via API
+            raise NotFound() from exc
+        attempt = af.answer.attempt
+        if attempt.user_id != request.user.id:
+            raise NotFound()
+        if attempt.status != Attempt.Status.IN_PROGRESS:
+            raise PermissionDenied("attempt_locked")
+        if af.file != url:
+            raise ValidationError("url_mismatch")
+        attrs["answer_file"] = af
+        return attrs
 
 
 class GradingItemSerializer(serializers.ModelSerializer):

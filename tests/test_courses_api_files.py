@@ -1,8 +1,10 @@
 from datetime import timedelta
+from urllib.parse import urlparse
 
 import jwt
 import pytest
 from django.conf import settings
+from django.core.files.storage import default_storage
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.utils import timezone
 from rest_framework.test import APIClient
@@ -139,3 +141,147 @@ def test_question_asset_upload(client, user, exam, question):
     )
     assert res.status_code == 201
     assert m.QuestionFile.objects.filter(question=question).exists()
+
+
+def _storage_path(url: str) -> str:
+    path = urlparse(url).path
+    media_url = settings.MEDIA_URL
+    if path.startswith(media_url):
+        path = path[len(media_url) :]
+    return path.lstrip("/")
+
+
+def _setup_file(client, user, course, exam, question, assignment):
+    course.participants.add(user)
+    res = client.post(
+        f"/api/v1/courses/{course.id}/exams/{exam.id}/attempts/start/",
+        **auth_headers(user),
+    )
+    attempt = m.Attempt.objects.get(id=res.json()["id"])
+    answer = m.Answer.objects.create(attempt=attempt, question=question)
+    upload = SimpleUploadedFile("img.png", b"1", content_type="image/png")
+    res = client.post(
+        "/api/v1/courses/files/upload/answer/",
+        {"answer_id": str(answer.id), "file": upload},
+        **auth_headers(user),
+    )
+    file_id = res.json()["file_id"]
+    url = res.json()["url"]
+    return attempt, file_id, url
+
+
+def test_delete_draft_answer_file(
+    client, user, course, exam, question, assignment
+):
+    attempt, file_id, url = _setup_file(
+        client, user, course, exam, question, assignment
+    )
+    path = _storage_path(url)
+    assert default_storage.exists(path)
+    res = client.delete(
+        "/api/v1/courses/files/upload/answer/",
+        {"file_id": file_id, "url": url},
+        format="json",
+        **auth_headers(user),
+    )
+    assert res.status_code == 204
+    assert not default_storage.exists(path)
+    assert not m.AnswerFile.objects.filter(id=file_id).exists()
+
+
+def test_delete_answer_file_not_owner(
+    client, user, course, exam, question, assignment
+):
+    attempt, file_id, url = _setup_file(
+        client, user, course, exam, question, assignment
+    )
+    other = User.objects.create_user(phone="+10000000002")
+    res = client.delete(
+        "/api/v1/courses/files/upload/answer/",
+        {"file_id": file_id, "url": url},
+        format="json",
+        **auth_headers(other),
+    )
+    assert res.status_code == 404
+
+
+def test_delete_answer_file_wrong_status(
+    client, user, course, exam, question, assignment
+):
+    attempt, file_id, url = _setup_file(
+        client, user, course, exam, question, assignment
+    )
+    attempt.status = m.Attempt.Status.SUBMITTED
+    attempt.save(update_fields=["status"])
+    res = client.delete(
+        "/api/v1/courses/files/upload/answer/",
+        {"file_id": file_id, "url": url},
+        format="json",
+        **auth_headers(user),
+    )
+    assert res.status_code == 403
+
+
+def test_delete_answer_file_invalid_body(client, user):
+    res = client.delete(
+        "/api/v1/courses/files/upload/answer/",
+        {"file_id": "bad"},
+        format="json",
+        **auth_headers(user),
+    )
+    assert res.status_code == 400
+
+
+def test_delete_answer_file_url_mismatch(
+    client, user, course, exam, question, assignment
+):
+    attempt, file_id, url = _setup_file(
+        client, user, course, exam, question, assignment
+    )
+    res = client.delete(
+        "/api/v1/courses/files/upload/answer/",
+        {"file_id": file_id, "url": url + "x"},
+        format="json",
+        **auth_headers(user),
+    )
+    assert res.status_code == 400
+
+
+def test_delete_answer_file_idempotent(
+    client, user, course, exam, question, assignment
+):
+    attempt, file_id, url = _setup_file(
+        client, user, course, exam, question, assignment
+    )
+    res1 = client.delete(
+        "/api/v1/courses/files/upload/answer/",
+        {"file_id": file_id, "url": url},
+        format="json",
+        **auth_headers(user),
+    )
+    assert res1.status_code == 204
+    res2 = client.delete(
+        "/api/v1/courses/files/upload/answer/",
+        {"file_id": file_id, "url": url},
+        format="json",
+        **auth_headers(user),
+    )
+    assert res2.status_code == 404
+
+
+def test_delete_answer_file_storage_missing(
+    client, user, course, exam, question, assignment
+):
+    attempt, file_id, url = _setup_file(
+        client, user, course, exam, question, assignment
+    )
+    path = _storage_path(url)
+    default_storage.delete(path)
+    res = client.delete(
+        "/api/v1/courses/files/upload/answer/",
+        {"file_id": file_id, "url": url},
+        format="json",
+        **auth_headers(user),
+    )
+    assert res.status_code == 204
+    assert not m.AnswerFile.objects.filter(id=file_id).exists()

@@ -273,7 +273,19 @@ Base URL: `/api/v1/courses/`
 **GET** `/files/{file_id}`
 
 - Auth-based streaming / signed URL
-    
+
+### 4.4 Delete Draft Answer File
+
+**DELETE** `/files/upload/answer/`
+
+- **Body**:
+
+```json
+{ "file_id": "901", "url": "/files/draft/901" }
+```
+
+- **Responses**: `204 No Content`
+
 
 ---
 
