@@ -320,7 +320,7 @@ class ProfileView(APIView):
             edu = user.educationalprofile
             profile["education"] = {
                 "level": edu.level_id,
-                "grade": edu.grade,
+                "grade": edu.grade_id,
                 "study_branch": edu.study_branch_id,
                 "olympiad_count": edu.olympiads.count(),
             }

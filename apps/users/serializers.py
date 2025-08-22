@@ -9,6 +9,7 @@ from rest_framework import serializers
 
 from .models import (
     City,
+    EducationalGrade,
     EducationalLevel,
     SchoolType,
     EducationalProfile,
@@ -239,7 +240,7 @@ class SchoolTypeSerializer(serializers.ModelSerializer):
 
 class EducationSerializer(serializers.Serializer):
     level = serializers.PrimaryKeyRelatedField(queryset=EducationalLevel.objects.all())
-    grade = serializers.IntegerField()
+    grade = serializers.PrimaryKeyRelatedField(queryset=EducationalGrade.objects.all())
     study_branch = serializers.PrimaryKeyRelatedField(
         queryset=StudyBranch.objects.all(), required=False, allow_null=True
     )
@@ -266,9 +267,9 @@ class EducationSerializer(serializers.Serializer):
     def validate(self, attrs):
         # Existing validation
         level: EducationalLevel = attrs["level"]
-        grade = attrs["grade"]
-        if grade < level.min_grade or grade > level.max_grade:
-            raise serializers.ValidationError({"grade": "out_of_range"})
+        grade: EducationalGrade = attrs["grade"]
+        if grade.level_id != level.id:
+            raise serializers.ValidationError({"grade": "invalid"})
         branch = attrs.get("study_branch")
         if level.is_high_school:
             if not branch:

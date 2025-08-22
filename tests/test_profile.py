@@ -3,6 +3,7 @@ import pytest
 from apps.users.models import (
     City,
     EducationalLevel,
+    EducationalGrade,
     IdentityInfo,
     Olympiad,
     OTPCode,
@@ -69,13 +70,14 @@ def test_education_and_location_and_parent_flow(auth_client, monkeypatch):
     level = EducationalLevel.objects.create(
         name="HighSchool", min_grade=10, max_grade=12, is_high_school=True
     )
+    grade_obj = EducationalGrade.objects.create(name="11", level=level)
     branch = StudyBranch.objects.create(level=level, name="Math")
     olymp = Olympiad.objects.create(name="O1", olympiad_degree=1, published=True)
     resp = client.post(
         "/api/v1/profile/education",
         {
             "level": level.id,
-            "grade": 11,
+            "grade": grade_obj.id,
             "study_branch": branch.id,
             "olympiad_ids": [olymp.id],
         },
