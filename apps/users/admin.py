@@ -10,6 +10,7 @@ from django.utils import timezone
 from .models import (
     City,
     EducationalLevel,
+    EducationalGrade,
     EducationalProfile,
     IdentityInfo,
     Location,
@@ -66,7 +67,7 @@ class EducationalProfileInline(admin.StackedInline):
     model = EducationalProfile
     can_delete = False
     extra = 0
-    autocomplete_fields = ("level", "study_branch")
+    autocomplete_fields = ("level", "grade", "study_branch")
 
 
 class LocationInline(admin.StackedInline):
@@ -262,7 +263,7 @@ class UserAdmin(admin.ModelAdmin):
                 else ""
             )
             grade = (
-                user.educationalprofile.grade
+                user.educationalprofile.grade.name
                 if getattr(user, "educationalprofile", None)
                 else ""
             )
@@ -321,6 +322,13 @@ class StudyBranchAdmin(admin.ModelAdmin):
     autocomplete_fields = ("level",)
 
 
+@admin.register(EducationalGrade)
+class EducationalGradeAdmin(admin.ModelAdmin):
+    list_display = ("name", "level")
+    search_fields = ("name", "level__name")
+    autocomplete_fields = ("level",)
+
+
 @admin.register(Olympiad)
 class OlympiadAdmin(admin.ModelAdmin):
     list_display = ("name", "olympiad_degree", "published")
@@ -336,8 +344,8 @@ class EducationalProfileAdmin(admin.ModelAdmin):
         "level__name",
         "study_branch__name",
     )
-    autocomplete_fields = ("user", "level", "study_branch")
-    list_select_related = ("user", "level", "study_branch")
+    autocomplete_fields = ("user", "level", "grade", "study_branch")
+    list_select_related = ("user", "level", "grade", "study_branch")
 
 
 @admin.register(Location)

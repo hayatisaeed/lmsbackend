@@ -7,6 +7,7 @@ from django.contrib.auth.models import PermissionsMixin
 from django.db import models
 from django.utils import timezone
 from django.utils.text import slugify
+from django.core.exceptions import ValidationError
 
 from django.core.files.storage import default_storage
 import os
@@ -268,6 +269,20 @@ class StudyBranch(models.Model):
         return self.name
 
 
+class EducationalGrade(models.Model):
+    name = models.CharField(max_length=50)
+    level = models.ForeignKey(
+        EducationalLevel, related_name="grades", on_delete=models.CASCADE
+    )
+
+    class Meta:
+        unique_together = ("name", "level")
+        ordering = ["level", "name"]
+
+    def __str__(self) -> str:  # pragma: no cover
+        return f"{self.name} ({self.level.name})"
+
+
 class Olympiad(models.Model):
     name = models.CharField(max_length=100)
     olympiad_degree = models.IntegerField()
@@ -292,13 +307,19 @@ class SchoolType(models.Model):
 class EducationalProfile(models.Model):
     user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     level = models.ForeignKey(EducationalLevel, on_delete=models.CASCADE)
-    grade = models.IntegerField()
+    grade = models.ForeignKey(EducationalGrade, on_delete=models.CASCADE)
     study_branch = models.ForeignKey(
         StudyBranch, on_delete=models.SET_NULL, null=True, blank=True
     )
     olympiads = models.ManyToManyField(Olympiad, blank=True)
     school_name = models.CharField(max_length=100)
     school_type = models.ForeignKey(SchoolType, on_delete=models.PROTECT)
+
+    def clean(self):
+        if self.grade.level_id != self.level_id:
+            raise ValidationError("grade_invalid_for_level")
+        if self.study_branch and self.study_branch.level_id != self.level_id:
+            raise ValidationError("study_branch_invalid_for_level")
 
 
 class Province(models.Model):
