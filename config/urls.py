@@ -4,6 +4,10 @@ from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 
 from . import views
 
+admin.site.site_header = "MentorHub Admin"
+admin.site.site_title = "MentorHub Admin"
+admin.site.index_title = "Dashboard"
+
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("api/v1/healthz", views.healthz, name="healthz"),
