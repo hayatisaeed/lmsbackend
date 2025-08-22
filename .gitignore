@@ -4,6 +4,7 @@ __pycache__/
 db.sqllite3
 .venv/
 .coverage
+migrations/
 
 # IDE
 .vscode/
