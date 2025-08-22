@@ -8,6 +8,7 @@ from .profile_views import (
     ParentView,
     ProfileCompletionView,
     ProfileView,
+    UserAvatarAPIView,
 )
 from .taxonomy_views import (
     EducationalLevelListView,
@@ -40,6 +41,7 @@ urlpatterns = [
     path("profile/parent/verify", ParentVerifyView.as_view()),
     path("profile", ProfileView.as_view()),
     path("profile/completion", ProfileCompletionView.as_view()),
+    path("profile/avatar", UserAvatarAPIView.as_view()),
 
     # Taxonomy Views and Endpoints
     path("educational-levels", EducationalLevelListView.as_view()),

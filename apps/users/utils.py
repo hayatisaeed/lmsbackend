@@ -4,6 +4,7 @@ from datetime import timedelta
 from typing import Tuple
 
 import jwt
+import re
 import requests
 from cryptography.fernet import Fernet
 from django.conf import settings
@@ -28,6 +29,8 @@ def send_otp(phone_number, method='sms', template=None):
     # Regular OTP generation for real phone numbers
     code = str(random.randint(100000, 999999))
     expires_at = timezone.now() + timedelta(minutes=5)
+
+    code, expires_at = generate_otp()
     
     # Create or update OTP record
     OTPCode.objects.update_or_create(
@@ -84,7 +87,7 @@ def generate_otp(phone: str, ip: str | None = None, purpose: str = "login") -> O
         ip=ip,
     )
     print(f"otp code for phone: {phone} is code: {code}")
-    return otp
+    return otp.code, otp.expires_at
 
 
 def generate_access_token(user: User) -> Tuple[str, int]:
