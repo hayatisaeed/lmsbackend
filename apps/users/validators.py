@@ -15,9 +15,22 @@ class PhoneNumberValidator:
         persian_to_english = str.maketrans('۰۱۲۳۴۵۶۷۸۹', '0123456789')
         normalized_value = value.translate(persian_to_english)
         
+        # Clean the number (remove spaces, dashes, etc.)
+        cleaned_value = re.sub(r'[^\d+]', '', normalized_value)
+        
+        # Convert to international format for validation
+        if cleaned_value.startswith('0'):
+            international_format = '+98' + cleaned_value[1:]
+        elif cleaned_value.startswith('98'):
+            international_format = '+' + cleaned_value
+        elif cleaned_value.startswith('+98'):
+            international_format = cleaned_value
+        else:
+            international_format = '+98' + cleaned_value
+        
         try:
-            # Validate using django-phonenumber-field
-            phone_number = PhoneNumber.from_string(normalized_value, region='IR')
+            # Validate using django-phonenumber-field with international format
+            phone_number = PhoneNumber.from_string(international_format, region='IR')
             if not phone_number.is_valid():
                 raise ValidationError(self.message)
         except:

@@ -12,8 +12,10 @@ from django.utils import timezone
 
 from .models import OTPCode, RefreshSession, User
 
+import logging
+logger = logging.getLogger(__name__)
 
-def send_otp(phone_number, method='sms', template=None):
+def send_otp(phone_number, ip, method='sms', template=None):
     """
     Generate and send OTP code to the provided phone number via external provider.
     
@@ -25,28 +27,11 @@ def send_otp(phone_number, method='sms', template=None):
     Returns:
         str: The generated OTP code (for testing purposes)
     """
-    
-    # Regular OTP generation for real phone numbers
-    code = str(random.randint(100000, 999999))
-    expires_at = timezone.now() + timedelta(minutes=5)
+    print(phone_number)
 
-    code, expires_at = generate_otp()
-    
-    # Create or update OTP record
-    OTPCode.objects.update_or_create(
-        phone_number=phone_number,
-        defaults={
-            'code': code, 
-            'expires_at': expires_at, 
-            'is_used': False
-        }
-    )
-    
-    # Send OTP via external provider
-    number = str(phone_number)
-    # Remove all spaces and non-digit characters
-    number = re.sub(r'[^\d]', '', number)
-    
+    code, expires_at = generate_otp(phone=phone_number, ip=ip)
+    number = phone_number
+
     if method == 'call':
         service = 'CallOTP'
         payload = {"code": code, "number": number}
@@ -160,8 +145,13 @@ def verify_identity_with_provider(  # pragma: no cover
         return {"verified": True}
     for _ in range(settings.IDENTITY_API_RETRIES):
         try:
+            headers = {
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {settings.IDENTITY_API_TOKEN}"
+            }
             resp = requests.post(
                 settings.IDENTITY_API_URL,
+                headers=headers,
                 json={"national_id": national_id, "date_of_birth": date_of_birth},
                 timeout=settings.IDENTITY_API_TIMEOUT,
             )

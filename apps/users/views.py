@@ -14,9 +14,15 @@ from .utils import (
     decode_refresh_token,
     generate_access_token,
     generate_otp,
+    send_otp,
     generate_refresh_session,
 )
 
+
+from .api import auth_service
+import logging
+
+logger = logging.getLogger(__name__)
 
 class APIError(APIException):
     def __init__(self, code: str, status_code: int):
@@ -24,12 +30,11 @@ class APIError(APIException):
         super().__init__(code)
 
 
-def _incr(key: str, ttl: int) -> int:
-    try:
-        return cache.incr(key)
-    except ValueError:
-        cache.add(key, 1, ttl)
-        return 1
+def _incr(key, timeout):
+    """Helper function to increment cache value with timeout"""
+    value = cache.get(key, 0) + 1
+    cache.set(key, value, timeout)
+    return value
 
 
 @extend_schema(tags=["Auth"])
@@ -39,32 +44,62 @@ class RequestOTPView(APIView):
     @extend_schema(
         request=RequestOTPSerializer,
         responses={
-            200: OpenApiResponse(description="OTP sent"),
+            200: OpenApiResponse(description="OTP sent successfully"),
+            400: OpenApiResponse(description="Invalid input"),
             429: OpenApiResponse(description="Too many requests"),
         },
     )
     def post(self, request):
         serializer = RequestOTPSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+        
         phone = serializer.validated_data["phone"]
         ip = request.META.get("REMOTE_ADDR", "unknown")
+        method = serializer.validated_data.get("method", "sms")
+        template = serializer.validated_data.get("template")
+        
+        # Rate limiting checks
         cooldown_key = f"otp:cooldown:{phone}"
         if cache.get(cooldown_key):
+            logger.warning(f"OTP request throttled for phone {phone} (cooldown)")
             raise APIError("otp_throttled", status.HTTP_429_TOO_MANY_REQUESTS)
-        if _incr(f"otp:phone:{phone}", 86400) > settings.OTP_MAX_PER_24H_PER_PHONE:
+            
+        # Check daily limit per phone
+        daily_phone_key = f"otp:phone:{phone}"
+        if _incr(daily_phone_key, 86400) > settings.OTP_MAX_PER_24H_PER_PHONE:
+            logger.warning(f"OTP daily limit exceeded for phone {phone}")
             raise APIError("otp_throttled", status.HTTP_429_TOO_MANY_REQUESTS)
-        if _incr(f"otp:ip:{ip}", 3600) > settings.OTP_MAX_PER_HOUR_PER_IP:
+            
+        # Check hourly limit per IP
+        hourly_ip_key = f"otp:ip:{ip}"
+        if _incr(hourly_ip_key, 3600) > settings.OTP_MAX_PER_HOUR_PER_IP:
+            logger.warning(f"OTP hourly limit exceeded for IP {ip}")
             raise APIError("otp_throttled", status.HTTP_429_TOO_MANY_REQUESTS)
-        generate_otp(phone, ip)
-        cache.set(cooldown_key, 1, settings.OTP_COOLDOWN_SEC)
-        user, created = User.objects.get_or_create(phone=phone)
-        return Response(
-            {
+        
+        try:
+            # Send OTP using the auth service
+            result = auth_service.send_otp(phone, ip, method, template)
+            
+            if not result.success:
+                logger.error(f"OTP sending failed for phone {phone}")
+                raise APIError("otp_send_failed", status.HTTP_500_INTERNAL_SERVER_ERROR)
+                
+            # Set cooldown period
+            cache.set(cooldown_key, 1, settings.OTP_COOLDOWN_SEC)
+            
+            # Get or create user
+            user, created = User.objects.get_or_create(phone=phone)
+            
+            return Response({
                 "is_new_user": created,
                 "cooldown_seconds": settings.OTP_COOLDOWN_SEC,
                 "next_step_hint": "verify_otp",
-            }
-        )
+                "method": method,
+            })
+            
+        except Exception as e:
+            logger.error(f"Unexpected error in OTP request: {str(e)}")
+            raise APIError("otp_send_failed", status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 @extend_schema(tags=["Auth"])
@@ -90,25 +125,6 @@ class VerifyOTPView(APIView):
             }
         )
 
-        refresh_cookie_name = str(settings.REFRESH_COOKIE_NAME)
-        jwt_refresh_ttl = settings.JWT_REFRESH_TTL_SEC
-        cookie_samesite = settings.COOKIE_SAMESITE
-
-        print(f"cookie_name: {refresh_cookie_name}, jwt_ttl: {jwt_refresh_ttl}, cookie_samesite: {cookie_samesite}")
-        try:
-            #print(f"refresh token: {refresh_token}")
-            response.set_cookie(
-                key=refresh_cookie_name, 
-                value=refresh_token,
-                max_age=jwt_refresh_ttl,  # Cookie expires in 1 hour (in seconds)
-                httponly=True, # Makes the cookie inaccessible to client-side scripts
-                secure=False,  # Set to True if serving over HTTPS
-                samesite=cookie_samesite, # Controls cross-site request behavior
-                path='/'       # The path for which the cookie is valid
-            )
-        except Exception as e:
-            print(f"related error for coockies: {e}")
-        '''
         response.set_cookie(
             settings.REFRESH_COOKIE_NAME,
             refresh_token,
@@ -125,7 +141,6 @@ class VerifyOTPView(APIView):
             secure=True,
             samesite=settings.COOKIE_SAMESITE,
         )
-        '''
         return response
 
 

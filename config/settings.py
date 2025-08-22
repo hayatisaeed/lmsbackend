@@ -160,12 +160,17 @@ OTP_TTL_SEC = int(os.getenv("OTP_TTL_SEC", "300"))
 OTP_COOLDOWN_SEC = int(os.getenv("OTP_COOLDOWN_SEC", "60"))
 OTP_MAX_PER_24H_PER_PHONE = int(os.getenv("OTP_MAX_PER_24H_PER_PHONE", "5"))
 OTP_MAX_PER_HOUR_PER_IP = int(os.getenv("OTP_MAX_PER_HOUR_PER_IP", "20"))
+OTP_API_URL = os.getenv("OTP_API_URL", "")
+OTP_API_TOKEN = os.getenv("OTP_API_TOKEN", "")
 
 IDENTITY_API_URL = os.getenv("IDENTITY_API_URL", "")
+IDENTITY_API_TOKEN = os.getenv("IDENTITY_API_TOKEN", "")
 IDENTITY_API_TIMEOUT = float(os.getenv("IDENTITY_API_TIMEOUT", "2.5"))
 IDENTITY_API_RETRIES = int(os.getenv("IDENTITY_API_RETRIES", "2"))
 DATA_ENCRYPTION_KEY = os.getenv("DATA_ENCRYPTION_KEY", None)
 AGE_THRESHOLD = int(os.getenv("AGE_THRESHOLD", "18"))
+
+API_KEY = os.getenv("API_KEY", "")
 
 # Users Avatar Image
 MAX_UPLOAD_SIZE = 5 * 1024 * 1024  # 5MB
@@ -180,7 +185,7 @@ CSRF_TRUSTED_ORIGINS = CORS_ALLOWED_ORIGINS
 REST_FRAMEWORK = {
     "DEFAULT_RENDERER_CLASSES": ["rest_framework.renderers.JSONRenderer"],
     "DEFAULT_PARSER_CLASSES": ["rest_framework.parsers.JSONParser"],
-    "EXCEPTION_HANDLER": "config.utils.exception_handler",
+    #"EXCEPTION_HANDLER": "config.utils.exception_handler",
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
     "DEFAULT_AUTHENTICATION_CLASSES": [
         "apps.users.auth.JWTAuthentication",

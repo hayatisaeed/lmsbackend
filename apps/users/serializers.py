@@ -1,5 +1,6 @@
 from datetime import timedelta
 from typing import Any
+import re
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
@@ -20,37 +21,88 @@ from .models import (
     StudyBranch,
 )
 from .utils import encrypt_str, generate_otp, verify_identity_with_provider
+from .api import identity_service, crypto_service
 
-from .validators import PhoneNumberValidator
+import re
+from rest_framework import serializers
+from django.core.validators import ValidationError
 
 User = get_user_model()
+
+class PhoneNumberValidator:
+    """
+    Validator for Iranian phone numbers
+    Supports: 09xxxxxxxxx, +989xxxxxxxxx, 989xxxxxxxxx
+    """
+    message = "invalid_phone_format"
+    
+    def __call__(self, value):
+        # Convert Persian digits to English
+        persian_to_english = str.maketrans('۰۱۲۳۴۵۶۷۸۹', '0123456789')
+        normalized_value = value.translate(persian_to_english)
+        
+        # Remove all non-digit characters except +
+        cleaned_value = re.sub(r'[^\d+]', '', normalized_value)
+        
+        # Check if it's a valid Iranian mobile number
+        if cleaned_value.startswith('+989') and len(cleaned_value) == 13:
+            # +989xxxxxxxxx format
+            if not cleaned_value[3:].isdigit() or len(cleaned_value[3:]) != 10:
+                raise ValidationError(self.message)
+                
+        elif cleaned_value.startswith('989') and len(cleaned_value) == 12:
+            # 989xxxxxxxxx format
+            if not cleaned_value[2:].isdigit() or len(cleaned_value[2:]) != 10:
+                raise ValidationError(self.message)
+                
+        elif cleaned_value.startswith('09') and len(cleaned_value) == 11:
+            # 09xxxxxxxxx format
+            if not cleaned_value.isdigit():
+                raise ValidationError(self.message)
+                
+        else:
+            raise ValidationError(self.message)
 
 
 class PhoneNumberField(serializers.CharField):
     """
-    Serializer field that accepts Persian digits and stores in English format
+    Serializer field that accepts various phone formats and stores as 09xxxxxxxxx
     """
     def __init__(self, **kwargs):
-        kwargs.setdefault('max_length', 13)
+        kwargs.setdefault('max_length', 11)
         super().__init__(**kwargs)
         self.validators.append(PhoneNumberValidator())
     
     def to_internal_value(self, data):
         value = super().to_internal_value(data)
         
+        # Convert Persian digits to English
         persian_to_english = str.maketrans('۰۱۲۳۴۵۶۷۸۹', '0123456789')
         normalized_value = value.translate(persian_to_english)
         
-        cleaned_value = re.sub(r'[^\d+]', '', normalized_value)
-
-        if cleaned_value.startswith('+98'):
-            return cleaned_value
-        elif cleaned_value.startswith('0'):
-            return '+98' + cleaned_value[1:]
+        # Remove all non-digit characters
+        cleaned_value = re.sub(r'[^\d]', '', normalized_value)
+        
+        # Convert to 09xxxxxxxxx format
+        if cleaned_value.startswith('989'):
+            # 989xxxxxxxxx -> 09xxxxxxxxx
+            return '0' + cleaned_value[2:]
         elif cleaned_value.startswith('9'):
-            return '+98' + cleaned_value
+            # 9xxxxxxxxx -> 09xxxxxxxxx
+            return '0' + cleaned_value
+        elif cleaned_value.startswith('09'):
+            # Already in correct format
+            if len(cleaned_value) == 11:
+                return cleaned_value
+            else:
+                raise ValidationError("invalid_phone_length")
         else:
-            return '+98' + cleaned_value
+            # Any other format that passed validation should be 09 + digits
+            return '09' + cleaned_value.lstrip('0')
+    
+    def to_representation(self, value):
+        # Return the stored value (09xxxxxxxxx)
+        return value
 
 
 class RequestOTPSerializer(serializers.Serializer):
@@ -92,46 +144,91 @@ class VerifyOTPSerializer(serializers.Serializer):
         return user
 
 
+
 class IdentitySerializer(serializers.Serializer):
-    national_id = serializers.CharField()
+    national_id = serializers.CharField(min_length=10, max_length=10)
     date_of_birth = serializers.DateField()
 
+    def validate_national_id(self, value):
+        """Validate national ID format"""
+        if not value.isdigit() or len(value) != 10:
+            raise serializers.ValidationError("Invalid national ID format")
+        return value
+
     def validate(self, attrs):
+        """Validate submission rate limits"""
         user = self.context["request"].user
         info, _ = IdentityInfo.objects.get_or_create(user=user)
         now = timezone.now()
+        
+        # Check if user has exceeded submission limits
         if info.last_attempt_at and now - info.last_attempt_at < timedelta(hours=24):
-            if info.submission_count >= 5:
+            if info.submission_count >= settings.IDENTITY_MAX_ATTEMPTS:
                 raise serializers.ValidationError("identity_rate_limited")
             info.submission_count += 1
         else:
+            # Reset counter if more than 24 hours have passed
             info.submission_count = 1
+        
         info.last_attempt_at = now
         info.save(update_fields=["submission_count", "last_attempt_at"])
+        
         return attrs
 
     def save(self, **kwargs):
+        """Verify identity with external provider and save results"""
         user = self.context["request"].user
         national_id = self.validated_data["national_id"]
-        dob = self.validated_data["date_of_birth"].isoformat()
+        date_of_birth = self.validated_data["date_of_birth"]
+        
+        # Format date for the external API
+        dob_formatted = f"{date_of_birth.year}/{date_of_birth.month}/{date_of_birth.day}"
+        
         try:
-            data = verify_identity_with_provider(national_id, dob)
-        except Exception:
-            raise serializers.ValidationError("identity_provider_error") from None
-        info, _ = IdentityInfo.objects.get_or_create(user=user)
-        info.national_id = encrypt_str(national_id)
-        info.date_of_birth = encrypt_str(dob)
-        info.first_name = data.get("first_name")
-        info.last_name = data.get("last_name")
-        info.father_name = data.get("father_name")
-        info.gender = data.get("gender")
-        info.verified = data.get("verified", True)
-        age = (timezone.now().date() - self.validated_data["date_of_birth"]).days // 365
-        info.requires_parent = age < settings.AGE_THRESHOLD
+            # Use the identity service to verify with external provider
+            result = identity_service.verify_identity(national_id, dob_formatted)
+        except RuntimeError as e:
+            #logger.error(f"Identity verification failed for user {user.id}: {str(e)}")
+            raise serializers.ValidationError("identity_provider_error")
+        except Exception as e:
+            #logger.error(f"Unexpected error during identity verification: {str(e)}")
+            raise serializers.ValidationError("identity_verification_failed")
+        
+        # Get or create identity info
+        info, created = IdentityInfo.objects.get_or_create(user=user)
+        
+        # Update identity info with verified data
+        if result['verified'] and 'data' in result:
+            data = result['data']
+            info.national_id = crypto_service.encrypt_str(national_id)
+            info.date_of_birth = crypto_service.encrypt_str(dob_formatted)
+            info.first_name = data.get("firstName", "")
+            info.last_name = data.get("lastName", "")
+            info.father_name = data.get("fatherName", "")
+            info.gender = data.get("gender", 0)
+            info.verified = True
+            
+            # Calculate age and check if parent is required
+            age = (timezone.now().date() - date_of_birth).days // 365
+            info.requires_parent = age < getattr(settings, 'AGE_THRESHOLD', 18)
+        else:
+            # Identity verification failed
+            info.verified = False
+            error_message = result.get('error') or result.get('message') or 'Verification failed'
+            #logger.warning(f"Identity verification failed for user {user.id}: {error_message}")
+        
         info.save()
-        user.profile_identity = True
-        user.save(update_fields=["profile_identity"])
-        return {"status": "verified"}
+        
+        # Update user profile if verified
+        if info.verified:
+            user.profile_identity = True
+            user.save(update_fields=["profile_identity"])
+        
+        return {
+            "status": "verified" if info.verified else "failed",
+            "requires_parent": info.requires_parent if info.verified else False,
+            "error": None if info.verified else result.get('error')
+        }
 
 
 class SchoolTypeSerializer(serializers.ModelSerializer):
