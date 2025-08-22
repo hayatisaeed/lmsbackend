@@ -27,6 +27,7 @@ INSTALLED_APPS = [
     "drf_spectacular",
     "django_filters",
     "storages",
+    "phonenumber_field",
     "apps.users",
     "apps.courses",
 ]
@@ -111,6 +112,10 @@ USE_TZ = True
 
 STATIC_URL = "static/"
 
+# Media settings
+MEDIA_URL = '/media/'
+MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 AUTH_USER_MODEL = "users.User"
@@ -135,9 +140,9 @@ ALLOWED_ANSWER_MIME = [
 ]
 
 CSRF_COOKIE_NAME = os.getenv("CSRF_COOKIE_NAME", "mh_csrf")
-CSRF_COOKIE_SECURE = True
+CSRF_COOKIE_SECURE = os.getenv("CSRF_COOKIE_SECURE", "false").lower() == "true"
 CSRF_COOKIE_SAMESITE = os.getenv("COOKIE_SAMESITE", "Lax")
-SESSION_COOKIE_SECURE = True
+SESSION_COOKIE_SECURE = os.getenv("SESSION_COOKIE_SECURE", "false").lower() == "true"
 SESSION_COOKIE_SAMESITE = os.getenv("COOKIE_SAMESITE", "Lax")
 
 REFRESH_COOKIE_NAME = os.getenv("REFRESH_COOKIE_NAME", "__Host-mh_rtk")
@@ -161,6 +166,10 @@ IDENTITY_API_TIMEOUT = float(os.getenv("IDENTITY_API_TIMEOUT", "2.5"))
 IDENTITY_API_RETRIES = int(os.getenv("IDENTITY_API_RETRIES", "2"))
 DATA_ENCRYPTION_KEY = os.getenv("DATA_ENCRYPTION_KEY", None)
 AGE_THRESHOLD = int(os.getenv("AGE_THRESHOLD", "18"))
+
+# Users Avatar Image
+MAX_UPLOAD_SIZE = 5 * 1024 * 1024  # 5MB
+ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
 
 CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOWED_ORIGINS: List[str] = [

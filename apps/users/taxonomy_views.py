@@ -3,13 +3,14 @@ from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_sche
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import City, EducationalLevel, Olympiad, Province, StudyBranch
+from .models import City, EducationalLevel, Olympiad, Province, StudyBranch, SchoolType
 from .serializers import (
     CitySerializer,
     EducationalLevelSerializer,
     OlympiadSerializer,
     ProvinceListSerializer,
     StudyBranchSerializer,
+    SchoolTypeSerializer,
 )
 
 
@@ -67,6 +68,22 @@ class StudyBranchListView(APIView):
             branches = branches.filter(is_active=True)
         branches = branches.order_by("name")
         serializer = StudyBranchSerializer(branches, many=True)
+        return Response(serializer.data)
+
+
+@extend_schema(tags=["Taxonomy"])
+class SchoolTypeListView(APIView):
+    @extend_schema(
+        parameters=[
+            OpenApiParameter(
+                "published", bool, OpenApiParameter.QUERY, required=False
+            ),
+        ],
+        responses={200: SchoolTypeSerializer(many=True)},
+    )
+    def get(self, request):
+        school_types = SchoolType.objects.all()
+        serializer = SchoolTypeSerializer(school_types, many=True)
         return Response(serializer.data)
 
 

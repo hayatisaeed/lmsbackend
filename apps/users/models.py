@@ -6,6 +6,13 @@ from django.contrib.auth.base_user import AbstractBaseUser, BaseUserManager
 from django.contrib.auth.models import PermissionsMixin
 from django.db import models
 from django.utils import timezone
+from django.utils.text import slugify
+
+from django.core.files.storage import default_storage
+import os
+from PIL import Image
+from io import BytesIO
+from django.core.files.uploadedfile import InMemoryUploadedFile
 
 
 class UserManager(BaseUserManager):
@@ -38,11 +45,19 @@ class UserManager(BaseUserManager):
         return self._create_user(phone, password, **extra_fields)
 
 
+def user_avatar_upload_path(instance, filename):
+    """Generate upload path for user avatars"""
+    ext = filename.split('.')[-1]
+    filename = f"{uuid.uuid4().hex}.{ext}"
+    return f"avatars/user_{instance.user.id}/{filename}"
+
+
 class User(AbstractBaseUser, PermissionsMixin):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     phone = models.CharField(max_length=20, unique=True)
     display_name = models.CharField(max_length=255, blank=True)
     email = models.EmailField(null=True, blank=True, unique=True)
+    avatar = models.ImageField()
     roles = models.JSONField(default=list)
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
@@ -139,7 +154,7 @@ class RefreshSession(models.Model):
 
 
 class IdentityInfo(models.Model):
-    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="identity")
     national_id = models.CharField(max_length=255)
     date_of_birth = models.CharField(max_length=255)
     first_name = models.CharField(max_length=255, blank=True, null=True)
@@ -150,6 +165,89 @@ class IdentityInfo(models.Model):
     requires_parent = models.BooleanField(default=False)
     submission_count = models.IntegerField(default=0)
     last_attempt_at = models.DateTimeField(null=True, blank=True)
+
+    avatar = models.ImageField(
+        upload_to=user_avatar_upload_path,
+        null=True,
+        blank=True,
+        max_length=500,
+        help_text="User profile avatar image"
+    )
+    avatar_thumbnail = models.ImageField(
+        upload_to=user_avatar_upload_path,
+        null=True,
+        blank=True,
+        max_length=500,
+        help_text="Thumbnail version of avatar"
+    )
+
+    def save(self, *args, **kwargs):
+        # Delete old files if avatar is being changed
+        if self.pk:
+            old_instance = User.objects.get(pk=self.pk)
+            if old_instance.avatar and old_instance.avatar != self.avatar:
+                if default_storage.exists(old_instance.avatar.name):
+                    default_storage.delete(old_instance.avatar.name)
+                if old_instance.avatar_thumbnail and default_storage.exists(old_instance.avatar_thumbnail.name):
+                    default_storage.delete(old_instance.avatar_thumbnail.name)
+
+        # Process new avatar if provided
+        if self.avatar and not self.avatar_thumbnail:
+            self.create_thumbnail()
+
+        super().save(*args, **kwargs)
+
+    def create_thumbnail(self):
+        """Create thumbnail version of the avatar"""
+        if not self.avatar:
+            return
+
+        # Open image
+        img = Image.open(self.avatar)
+        
+        # Convert to RGB if necessary
+        if img.mode in ('RGBA', 'LA'):
+            background = Image.new('RGB', img.size, (255, 255, 255))
+            background.paste(img, mask=img.split()[-1])
+            img = background
+        elif img.mode != 'RGB':
+            img = img.convert('RGB')
+
+        # Create thumbnail
+        img.thumbnail((150, 150), Image.Resampling.LANCZOS)
+        
+        # Save to memory
+        thumb_io = BytesIO()
+        img.save(thumb_io, format='JPEG', quality=85)
+        thumb_io.seek(0)
+        
+        # Create new filename for thumbnail
+        ext = os.path.splitext(self.avatar.name)[1]
+        thumb_filename = f"thumb_{uuid.uuid4().hex}.jpg"
+        
+        # Save thumbnail
+        self.avatar_thumbnail.save(
+            thumb_filename,
+            InMemoryUploadedFile(
+                thumb_io,
+                None,
+                thumb_filename,
+                'image/jpeg',
+                thumb_io.getbuffer().nbytes,
+                None
+            ),
+            save=False
+        )
+
+    def delete(self, *args, **kwargs):
+        """Delete associated files when profile is deleted"""
+        if self.avatar:
+            if default_storage.exists(self.avatar.name):
+                default_storage.delete(self.avatar.name)
+        if self.avatar_thumbnail:
+            if default_storage.exists(self.avatar_thumbnail.name):
+                default_storage.delete(self.avatar_thumbnail.name)
+        super().delete(*args, **kwargs)
 
 
 class EducationalLevel(models.Model):
@@ -179,6 +277,18 @@ class Olympiad(models.Model):
     def __str__(self) -> str:  # pragma: no cover
         return self.name
 
+class SchoolType(models.Model):
+    name = models.CharField(max_length=25)
+    slug = models.SlugField(unique=True, blank=True)
+
+    def __str__(self):
+        return self.name
+    
+    def save(self, *args, **kwargs):
+        if not self.slug:
+            self.slug = slugify(f"{self.name}")
+        super().save(*args, **kwargs)
+
 
 class EducationalProfile(models.Model):
     user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
@@ -188,11 +298,18 @@ class EducationalProfile(models.Model):
         StudyBranch, on_delete=models.SET_NULL, null=True, blank=True
     )
     olympiads = models.ManyToManyField(Olympiad, blank=True)
+    school_name = models.CharField(max_length=100)
+    school_type = models.ForeignKey(SchoolType, on_delete=models.PROTECT)
 
 
 class Province(models.Model):
     name = models.CharField(max_length=100)
     slug = models.SlugField(unique=True)
+
+    def save(self, *args, **kwargs):
+        if not self.slug:
+            self.slug = slugify(f"{self.name}")
+        super().save(*args, **kwargs)
 
     def __str__(self) -> str:  # pragma: no cover
         return self.name
@@ -201,10 +318,15 @@ class Province(models.Model):
 class City(models.Model):
     province = models.ForeignKey(Province, on_delete=models.CASCADE)
     name = models.CharField(max_length=100)
-    slug = models.SlugField()
+    slug = models.SlugField(blank=True)
 
     class Meta:
         unique_together = ("province", "slug")
+
+    def save(self, *args, **kwargs):
+        if not self.slug:
+            self.slug = slugify(f"{self.province}-{self.name}")
+        super().save(*args, **kwargs)
 
     def __str__(self) -> str:  # pragma: no cover
         return self.name

@@ -12,6 +12,68 @@ from django.utils import timezone
 from .models import OTPCode, RefreshSession, User
 
 
+def send_otp(phone_number, method='sms', template=None):
+    """
+    Generate and send OTP code to the provided phone number via external provider.
+    
+    Args:
+        phone_number: PhoneNumberField instance
+        method: 'sms' or 'call' - method to send OTP
+        template: int or None - template id for SMS
+        
+    Returns:
+        str: The generated OTP code (for testing purposes)
+    """
+    
+    # Regular OTP generation for real phone numbers
+    code = str(random.randint(100000, 999999))
+    expires_at = timezone.now() + timedelta(minutes=5)
+    
+    # Create or update OTP record
+    OTPCode.objects.update_or_create(
+        phone_number=phone_number,
+        defaults={
+            'code': code, 
+            'expires_at': expires_at, 
+            'is_used': False
+        }
+    )
+    
+    # Send OTP via external provider
+    number = str(phone_number)
+    # Remove all spaces and non-digit characters
+    number = re.sub(r'[^\d]', '', number)
+    
+    if method == 'call':
+        service = 'CallOTP'
+        payload = {"code": code, "number": number}
+    elif method == 'sms':
+        service = 'SmsOTP'
+        payload = {"code": code, "mobile": number}
+        if template is not None:
+            payload["template"] = template
+    else:
+        raise ValueError("method must be 'sms' or 'call'")
+
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {settings.OTP_API_KEY}"
+    }
+
+    try:
+        response = requests.post(f"{settings.OTP_API_URL}{service}", headers=headers, json=payload, timeout=10)
+        response.raise_for_status()
+        logger.info(f"OTP sent via {method} to {number}: {response.text}")
+        print(response.text)
+        print(f"Original: {str(phone_number)}, Cleaned: {number}")
+    except requests.RequestException as e:
+        logger.error(f"OTP sending failed for {number} via {method}: {e} | {getattr(e.response, 'text', '')}")
+        # In development, still print the code for testing
+        print(f"OTP for {phone_number}: {code} (Expires: {expires_at})")
+    
+    return code  # Return for testing purposes
+
+
 def generate_otp(phone: str, ip: str | None = None, purpose: str = "login") -> OTPCode:
     code = "".join(str(random.randint(0, 9)) for _ in range(settings.OTP_LENGTH))
     otp = OTPCode.objects.create(

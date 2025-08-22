@@ -12,3 +12,4 @@ db.sqllite3
 # OS files
 ## MacOS file-system
 .DS_Store
+media/

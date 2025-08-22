@@ -1,9 +1,11 @@
 from drf_spectacular.utils import OpenApiResponse, extend_schema
 from prometheus_client import Counter, Histogram
-from rest_framework import serializers
+from rest_framework import serializers, status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from django.core.files.images import get_image_dimensions
+from django.conf import settings
 
 from .models import (
     EducationalProfile,
@@ -82,6 +84,57 @@ class IdentityView(APIView):
             identity_provider_latency_ms.observe((time.time() - start))
 
 
+class UserAvatarAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def validate_avatar(self, image):
+        if image.size > settings.MAX_UPLOAD_SIZE:
+            raise serializers.ValidationError("File size too large. Max 5MB allowed.")
+        
+        if image.content_type not in settings.ALLOWED_IMAGE_TYPES:
+            raise serializers.ValidationError("Unsupported file type. Use JPEG, PNG, GIF, or WEBP.")
+        
+        width, height = get_image_dimensions(image)
+        if width < 100 or height < 100:
+            raise serializers.ValidationError("Image too small. Minimum 100x100 pixels.")
+        if width > 2000 or height > 2000:
+            raise serializers.ValidationError("Image too large. Maximum 2000x2000 pixels.")
+        
+        return image
+
+    def post(self, request):
+        if 'avatar' not in request.FILES:
+            return Response({'error': 'No avatar file provided'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        avatar_file = request.FILES['avatar']
+        
+        try:
+            self.validate_avatar(avatar_file)
+        except serializers.ValidationError as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Delete old avatar if exists
+        if request.user.avatar:
+            request.user.avatar.delete()
+        
+        # Save new avatar
+        request.user.avatar = avatar_file
+        request.user.save()
+        
+        return Response({
+            'status': 'success',
+            'avatar_url': request.user.avatar.url
+        }, status=status.HTTP_200_OK)
+
+    def delete(self, request):
+        if request.user.avatar:
+            request.user.avatar.delete()
+            request.user.avatar = None
+            request.user.save()
+        
+        return Response({'status': 'success'}, status=status.HTTP_200_OK)
+
+
 @extend_schema(tags=["Profile"])
 class EducationView(APIView):
     permission_classes = [IsAuthenticated]
@@ -94,16 +147,79 @@ class EducationView(APIView):
         },
     )
     def post(self, request):
-        serializer = EducationSerializer(
-            data=request.data, context={"request": request}
+        return self._handle_education_request(request, is_partial=False)
+
+    @extend_schema(
+        request=EducationSerializer,
+        responses={
+            200: EducationSerializer,
+            400: OpenApiResponse(description="Validation error"),
+        },
+    )
+    def put(self, request):
+        return self._handle_education_request(request, is_partial=True)
+
+    @extend_schema(
+        request=EducationSerializer,
+        responses={
+            200: EducationSerializer,
+            400: OpenApiResponse(description="Validation error"),
+        },
+    )
+    def patch(self, request):
+        return self._handle_education_request(request, is_partial=True)
+
+    def _handle_education_request(self, request, is_partial=False):
+        # Handle education data
+        education_serializer = EducationSerializer(
+            data=request.data, 
+            context={"request": request},
+            partial=is_partial
         )
-        if serializer.is_valid():
-            return Response(serializer.save())
-        for field in serializer.errors.keys():  # pragma: no cover
-            education_validation_errors_total.labels(
-                field=field
-            ).inc()  # pragma: no cover
-        return Response({"error": serializer.errors}, status=400)  # pragma: no cover
+        
+        # Handle location data if provided
+        location_data = {}
+        location_fields = ["province_id", "city_id", "province", "city"]
+        
+        for field in location_fields:
+            if field in request.data:
+                location_data[field] = request.data.get(field)
+        
+        location_serializer = None
+        if location_data:
+            location_serializer = LocationSerializer(
+                data=location_data, 
+                context={"request": request}
+            )
+            location_is_valid = location_serializer.is_valid()
+        else:
+            location_is_valid = True
+        
+        education_is_valid = education_serializer.is_valid()
+        
+        if education_is_valid and location_is_valid:
+            # Save education data
+            education_result = education_serializer.save()
+            
+            # Save location data if provided
+            location_result = None
+            if location_serializer:
+                location_result = location_serializer.save()
+            
+            response_data = {"ok": True}
+            if location_result:
+                response_data["location_updated"] = True
+            
+            return Response(response_data)
+        
+        # Combine errors
+        errors = {}
+        if not education_is_valid:
+            errors.update(education_serializer.errors)
+        if location_serializer and not location_is_valid:
+            errors.update(location_serializer.errors)
+        
+        return Response({"error": errors}, status=400)
 
 
 @extend_schema(tags=["Profile"])

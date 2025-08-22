@@ -9,6 +9,7 @@ from rest_framework import serializers
 from .models import (
     City,
     EducationalLevel,
+    SchoolType,
     EducationalProfile,
     IdentityInfo,
     Location,
@@ -20,21 +21,45 @@ from .models import (
 )
 from .utils import encrypt_str, generate_otp, verify_identity_with_provider
 
+from .validators import PhoneNumberValidator
+
 User = get_user_model()
 
 
-class RequestOTPSerializer(serializers.Serializer):
-    phone = serializers.CharField()
+class PhoneNumberField(serializers.CharField):
+    """
+    Serializer field that accepts Persian digits and stores in English format
+    """
+    def __init__(self, **kwargs):
+        kwargs.setdefault('max_length', 13)
+        super().__init__(**kwargs)
+        self.validators.append(PhoneNumberValidator())
+    
+    def to_internal_value(self, data):
+        value = super().to_internal_value(data)
+        
+        persian_to_english = str.maketrans('۰۱۲۳۴۵۶۷۸۹', '0123456789')
+        normalized_value = value.translate(persian_to_english)
+        
+        cleaned_value = re.sub(r'[^\d+]', '', normalized_value)
 
-    def validate_phone(self, value: str) -> str:
-        if not value.startswith("+"):
-            raise serializers.ValidationError("invalid_phone")
-        return value
+        if cleaned_value.startswith('+98'):
+            return cleaned_value
+        elif cleaned_value.startswith('0'):
+            return '+98' + cleaned_value[1:]
+        elif cleaned_value.startswith('9'):
+            return '+98' + cleaned_value
+        else:
+            return '+98' + cleaned_value
+
+
+class RequestOTPSerializer(serializers.Serializer):
+    phone = PhoneNumberField(required=True)
 
 
 class VerifyOTPSerializer(serializers.Serializer):
-    phone = serializers.CharField()
-    code = serializers.CharField()
+    phone = PhoneNumberField(required=True)
+    code = serializers.CharField(max_length=settings.OTP_LENGTH, min_length=settings.OTP_LENGTH)
     display_name = serializers.CharField(required=False)
     email = serializers.EmailField(required=False, allow_null=True, allow_blank=True)
 
@@ -42,7 +67,7 @@ class VerifyOTPSerializer(serializers.Serializer):
         phone = attrs.get("phone")
         code = attrs.get("code")
         try:
-            otp = OTPCode.objects.get(phone=phone, purpose="login")
+            otp = OTPCode.objects.filter(phone=phone, purpose="login").latest('created_at')
         except OTPCode.DoesNotExist:
             raise serializers.ValidationError("otp_invalid_or_expired") from None
         if not otp.is_valid(code):
@@ -109,6 +134,12 @@ class IdentitySerializer(serializers.Serializer):
         return {"status": "verified"}
 
 
+class SchoolTypeSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SchoolType
+        fields = ['name', 'slug']
+
+
 class EducationSerializer(serializers.Serializer):
     level = serializers.PrimaryKeyRelatedField(queryset=EducationalLevel.objects.all())
     grade = serializers.IntegerField()
@@ -120,8 +151,23 @@ class EducationSerializer(serializers.Serializer):
         many=True,
         required=False,
     )
+    # Add new fields
+    school_name = serializers.CharField(required=False, allow_blank=True)
+    school_type = serializers.PrimaryKeyRelatedField(
+        queryset=SchoolType.objects.all(), required=False, allow_null=True
+    )
+    # Location fields
+    province_id = serializers.PrimaryKeyRelatedField(
+        queryset=Province.objects.all(), required=False, allow_null=True
+    )
+    city_id = serializers.PrimaryKeyRelatedField(
+        queryset=City.objects.all(), required=False, allow_null=True
+    )
+    province = serializers.CharField(required=False)
+    city = serializers.CharField(required=False)
 
     def validate(self, attrs):
+        # Existing validation
         level: EducationalLevel = attrs["level"]
         grade = attrs["grade"]
         if grade < level.min_grade or grade > level.max_grade:
@@ -135,22 +181,72 @@ class EducationSerializer(serializers.Serializer):
         olympiads = attrs.get("olympiad_ids", [])
         if len({o.id for o in olympiads}) > 3:
             raise serializers.ValidationError({"olympiad_ids": "too_many"})
+        
+        # New school validation
+        school_name = attrs.get("school_name")
+        school_type = attrs.get("school_type")
+        if school_name and not school_type:
+            raise serializers.ValidationError({"school_type": "required_with_school_name"})
+        if school_type and not school_name:
+            raise serializers.ValidationError({"school_name": "required_with_school_type"})
+        
+        # Location validation
+        province = attrs.get("province_id")
+        city = attrs.get("city_id")
+        if not province or not city:
+            pname = attrs.get("province")
+            cname = attrs.get("city")
+            if pname and cname:
+                try:
+                    province = Province.objects.get(name__iexact=pname)
+                    city = City.objects.get(name__iexact=cname, province=province)
+                except (Province.DoesNotExist, City.DoesNotExist):
+                    raise serializers.ValidationError({"location": "invalid"}) from None
+            else:
+                # Location is optional in updates, only validate if partial data provided
+                if any([pname, cname, attrs.get('province_id'), attrs.get('city_id')]):
+                    raise serializers.ValidationError({"location": "invalid"})
+        else:
+            if city.province_id != province.id:
+                raise serializers.ValidationError({"location": "invalid"})
+        
+        attrs["province_obj"] = province
+        attrs["city_obj"] = city
         return attrs
 
     def save(self, **kwargs):
         user = self.context["request"].user
+        
+        # Save educational profile with new fields
         profile, _ = EducationalProfile.objects.update_or_create(
             user=user,
             defaults={
                 "level": self.validated_data["level"],
                 "grade": self.validated_data["grade"],
                 "study_branch": self.validated_data.get("study_branch"),
+                "school_name": self.validated_data.get("school_name", ""),
+                "school_type": self.validated_data.get("school_type"),
             },
         )
+        
         if "olympiad_ids" in self.validated_data:
             profile.olympiads.set(self.validated_data["olympiad_ids"])
+        
+        # Save location if provided
+        if "province_obj" in self.validated_data and "city_obj" in self.validated_data:
+            Location.objects.update_or_create(
+                user=user,
+                defaults={
+                    "province": self.validated_data["province_obj"],
+                    "city": self.validated_data["city_obj"],
+                },
+            )
+            user.profile_location = True
+            user.save(update_fields=["profile_location"])
+        
         user.profile_education = True
         user.save(update_fields=["profile_education"])
+        
         return {"ok": True}
 
 
@@ -165,37 +261,58 @@ class LocationSerializer(serializers.Serializer):
     city = serializers.CharField(required=False)
 
     def validate(self, attrs):
-        province = attrs.get("province_id")
-        city = attrs.get("city_id")
-        if not province or not city:
-            pname = attrs.get("province")
-            cname = attrs.get("city")
-            if pname and cname:
-                try:
-                    province = Province.objects.get(name__iexact=pname)
-                    city = City.objects.get(name__iexact=cname, province=province)
-                except (Province.DoesNotExist, City.DoesNotExist):
-                    raise serializers.ValidationError("location_invalid") from None
-            else:
-                raise serializers.ValidationError("location_invalid")
+        province_id = attrs.get("province_id")
+        city_id = attrs.get("city_id")
+        province_name = attrs.get("province")
+        city_name = attrs.get("city")
+        
+        # If no location data provided, skip validation
+        if not any([province_id, city_id, province_name, city_name]):
+            return attrs
+        
+        # Validate province
+        if province_id:
+            province = province_id
+        elif province_name:
+            try:
+                province = Province.objects.get(name__iexact=province_name)
+            except Province.DoesNotExist:
+                raise serializers.ValidationError({"province": "invalid"})
         else:
+            raise serializers.ValidationError({"province": "required"})
+        
+        # Validate city
+        if city_id:
+            city = city_id
             if city.province_id != province.id:
-                raise serializers.ValidationError("location_invalid")
+                raise serializers.ValidationError({"city": "invalid_for_province"})
+        elif city_name:
+            try:
+                city = City.objects.get(name__iexact=city_name, province=province)
+            except City.DoesNotExist:
+                raise serializers.ValidationError({"city": "invalid"})
+        else:
+            raise serializers.ValidationError({"city": "required"})
+        
         attrs["province_obj"] = province
         attrs["city_obj"] = city
         return attrs
 
     def save(self, **kwargs):
         user = self.context["request"].user
-        Location.objects.update_or_create(
-            user=user,
-            defaults={
-                "province": self.validated_data["province_obj"],
-                "city": self.validated_data["city_obj"],
-            },
-        )
-        user.profile_location = True
-        user.save(update_fields=["profile_location"])
+        
+        # Only update if location data was provided and validated
+        if "province_obj" in self.validated_data and "city_obj" in self.validated_data:
+            Location.objects.update_or_create(
+                user=user,
+                defaults={
+                    "province": self.validated_data["province_obj"],
+                    "city": self.validated_data["city_obj"],
+                },
+            )
+            user.profile_location = True
+            user.save(update_fields=["profile_location"])
+        
         return {"ok": True}
 
 
