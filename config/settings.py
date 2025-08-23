@@ -49,6 +49,7 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -126,6 +127,19 @@ USE_TZ = True
 
 STATIC_URL = "static/"
 
+from pathlib import Path
+BASE_DIR = Path(__file__).resolve().parent.parent
+STATIC_ROOT = BASE_DIR / "staticfiles"
+
+STORAGES = {
+    "staticfiles": {
+        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+    }
+}
+
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+USE_X_FORWARDED_HOST = True
+
 # Media settings
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
@@ -196,18 +210,11 @@ CORS_ALLOW_CREDENTIALS = True
 if DEBUG:
     local_ip = get_local_ip()
     CORS_ORIGIN_ALLOW_ALL = True
-    CSRF_TRUSTED_ORIGINS = [
-        f"http://{local_ip}:3000",
-        f"http://{local_ip}:8000",
-        "http://localhost:3000",
-        "http://localhost:8000",
-        "http://127.0.0.1:3000", 
-        "http://127.0.0.1:8000",
-    ]
 else:
     CORS_ALLOWED_ORIGINS: List[str] = [
         o for o in os.getenv("ALLOWED_ORIGINS", "").split(",") if o
     ]
+    CORS_ALLOWED_ORIGINS += ALLOWED_HOSTS
     CSRF_TRUSTED_ORIGINS = CORS_ALLOWED_ORIGINS
 
 REST_FRAMEWORK = {
