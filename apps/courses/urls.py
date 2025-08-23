@@ -5,6 +5,8 @@ from . import views
 urlpatterns = [
     path("health/", views.health, name="courses-health"),
     path("readiness/", views.readiness, name="courses-readiness"),
+    path('courses/', views.CourseListView.as_view(), name='course-list'),
+    path('courses/<uuid:course_id>/', views.CourseDetailView.as_view(), name='course-detail'),
     path("exams/", views.ExamListCreateView.as_view(), name="exam-list"),
     path("exams/<uuid:pk>/", views.ExamDetailView.as_view(), name="exam-detail"),
     path(
