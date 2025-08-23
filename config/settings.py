@@ -41,6 +41,7 @@ INSTALLED_APPS = [
     "django_filters",
     "storages",
     "phonenumber_field",
+    "apps.api",
     "apps.users",
     "apps.courses",
 ]

@@ -83,11 +83,13 @@ class PhoneNumberField(serializers.CharField):
         
         # Remove all non-digit characters
         cleaned_value = re.sub(r'[^\d]', '', normalized_value)
+
+        print(cleaned_value)
         
         # Convert to 09xxxxxxxxx format
         if cleaned_value.startswith('989'):
             # 989xxxxxxxxx -> 09xxxxxxxxx
-            return '0' + cleaned_value[2:]
+            return '09' + cleaned_value[2:]
         elif cleaned_value.startswith('9'):
             # 9xxxxxxxxx -> 09xxxxxxxxx
             return '0' + cleaned_value
