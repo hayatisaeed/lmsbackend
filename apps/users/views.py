@@ -4,7 +4,7 @@ from django.middleware.csrf import get_token
 from drf_spectacular.utils import OpenApiResponse, extend_schema
 from rest_framework import status
 from rest_framework.exceptions import APIException
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -220,6 +220,7 @@ class LogoutView(APIView):
 
 @extend_schema(tags=["Auth"])
 class SessionView(APIView):
+    parser_classes = [IsAuthenticated]
     @extend_schema(
         responses={200: OpenApiResponse(description="Current session info")}
     )
