@@ -88,7 +88,7 @@ class CourseListView(APIView):
         query = Q(visibility=Course.Visibility.PUBLIC)
         
         # If user is admin, include private courses too
-        if request.user.is_admin:  # Adjust this based on your admin check
+        if request.user.is_staff:  # Adjust this based on your admin check
             query = query | Q(visibility=Course.Visibility.PRIVATE)
         else:
             # For non-admin users, also include private courses they've joined
