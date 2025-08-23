@@ -18,6 +18,9 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from django.db.models import Q
+from .models import Course
+
 from .models import (
     Answer,
     AnswerFile,
@@ -28,6 +31,7 @@ from .models import (
     GradingItem,
     Question,
     QuestionFile,
+    Course,
 )
 from .permissions import IsAttemptOwner, IsEnrolledInCourse, IsExamAdmin, IsGrader
 from .serializers import (
@@ -44,6 +48,9 @@ from .serializers import (
     GradingItemSerializer,
     MCQOptionSerializer,
     QuestionSerializer,
+    CourseDetailSerializer,
+    CourseListSerializer
+
 )
 
 
@@ -71,6 +78,89 @@ def readiness(_request):
     ok = checks["db"] and checks["redis"]
     status = "ok" if ok else "error"
     return JsonResponse({"status": status, **checks})
+
+
+class CourseListView(APIView):
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request):
+        # Base query - public courses
+        query = Q(visibility=Course.Visibility.PUBLIC)
+        
+        # If user is admin, include private courses too
+        if request.user.is_admin:  # Adjust this based on your admin check
+            query = query | Q(visibility=Course.Visibility.PRIVATE)
+        else:
+            # For non-admin users, also include private courses they've joined
+            query = query | Q(visibility=Course.Visibility.PRIVATE, participants=request.user)
+        
+        courses = Course.objects.filter(query).distinct()
+        serializer = CourseListSerializer(courses, many=True, context={'request': request})
+        return Response(serializer.data)
+    
+    def post(self, request):
+        course_id = request.data.get('course_id')
+        if not course_id:
+            return Response(
+                {'error': 'course_id is required'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            course = Course.objects.get(id=course_id)
+            
+            # Check if course is free
+            if course.access_mode != Course.AccessMode.FREE:
+                return Response(
+                    {'error': 'This course requires purchase'}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Add user to participants if not already joined
+            if not course.participants.filter(id=request.user.id).exists():
+                course.participants.add(request.user)
+            
+            return Response(
+                {'status': 'success', 'message': 'Successfully joined the course'},
+                status=status.HTTP_200_OK
+            )
+            
+        except Course.DoesNotExist:
+            return Response(
+                {'error': 'Course not found'}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+
+class CourseDetailView(APIView):
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request, course_id):
+        try:
+            course = Course.objects.get(id=course_id)
+            
+            # Check if user can access this course
+            if (course.visibility == Course.Visibility.PRIVATE and 
+                not request.user.is_admin and 
+                not course.participants.filter(id=request.user.id).exists()):
+                return Response(
+                    {'error': 'You do not have permission to access this course'}, 
+                    status=status.HTTP_403_FORBIDDEN
+                )
+            
+            # Use different serializer for admin users
+            if request.user.is_admin:
+                serializer = CourseDetailSerializer(course, context={'request': request})
+            else:
+                serializer = CourseListSerializer(course, context={'request': request})
+            
+            return Response(serializer.data)
+            
+        except Course.DoesNotExist:
+            return Response(
+                {'error': 'Course not found'}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
 
 
 @extend_schema(tags=["Exams"])

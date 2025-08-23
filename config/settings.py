@@ -25,6 +25,9 @@ ALLOWED_HOSTS: List[str] = [
     h for h in os.getenv("ALLOWED_HOSTS", "").split(",") if h
 ] or ["*"]
 
+if DEBUG:
+    ALLOWED_HOSTS = ["*"]
+
 INSTALLED_APPS = [
     "django.contrib.admin",
     "django.contrib.auth",

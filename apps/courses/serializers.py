@@ -16,7 +16,41 @@ from .models import (
     MCQOption,
     Question,
     QuestionFile,
+    Course,
 )
+
+
+class CourseListSerializer(serializers.ModelSerializer):
+    is_joined = serializers.SerializerMethodField()
+    access_mode = serializers.CharField(read_only=True)
+    
+    class Meta:
+        model = Course
+        fields = [
+            'id', 'name', 'description', 'banner_image', 'index_image',
+            'visibility', 'access_mode', 'created_at', 'updated_at', 'is_joined'
+        ]
+    
+    def get_is_joined(self, obj):
+        request = self.context.get('request')
+        if request and request.user.is_authenticated:
+            return obj.participants.filter(id=request.user.id).exists()
+        return False
+
+
+class CourseDetailSerializer(CourseListSerializer):
+    class Meta(CourseListSerializer.Meta):
+        fields = CourseListSerializer.Meta.fields + ['participants']
+    
+    def to_representation(self, instance):
+        representation = super().to_representation(instance)
+        request = self.context.get('request')
+        
+        # Hide participants field for non-admin users
+        if not (request and request.user.is_authenticated and request.user.is_admin):
+            representation.pop('participants', None)
+        
+        return representation
 
 
 class ExamSerializer(serializers.ModelSerializer):
