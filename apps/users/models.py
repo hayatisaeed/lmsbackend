@@ -252,8 +252,8 @@ class IdentityInfo(models.Model):
 
 class EducationalLevel(models.Model):
     name = models.CharField(max_length=100)
-    min_grade = models.IntegerField()
-    max_grade = models.IntegerField()
+    min_grade = models.IntegerField(blank=True)
+    max_grade = models.IntegerField(blank=True)
     is_high_school = models.BooleanField(default=False)
 
     def __str__(self) -> str:  # pragma: no cover
