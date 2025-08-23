@@ -4,6 +4,8 @@ services:
   web:
     build: .
     command: gunicorn config.wsgi:application --bind 0.0.0.0:8000
+    env_file:
+      - .env
     volumes:
       - ./media:/app/media
     depends_on:
@@ -11,7 +13,7 @@ services:
       - redis
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.web.rule=Host(`${DOMAIN}`)"
+      - "traefik.http.routers.web.rule=Host(\`${DOMAIN}\`)"
       - "traefik.http.routers.web.entrypoints=websecure"
       - "traefik.http.routers.web.tls.certresolver=le"
     networks:
@@ -21,6 +23,8 @@ services:
   worker:
     build: .
     command: celery -A config worker -l info
+    env_file:
+      - .env
     volumes:
       - ./media:/app/media
     depends_on:
@@ -31,6 +35,8 @@ services:
 
   db:
     image: postgres:17
+    env_file:
+      - .env
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
@@ -38,6 +44,8 @@ services:
 
   redis:
     image: redis:7
+    env_file:
+      - .env
     networks:
       - internal
 
@@ -58,6 +66,8 @@ services:
     volumes:
       - ./traefik/acme.json:/acme.json
       - /var/run/docker.sock:/var/run/docker.sock:ro
+    env_file:
+      - .env
     networks:
       - web
       - internal
