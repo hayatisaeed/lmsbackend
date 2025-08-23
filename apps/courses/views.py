@@ -141,7 +141,7 @@ class CourseDetailView(APIView):
             
             # Check if user can access this course
             if (course.visibility == Course.Visibility.PRIVATE and 
-                not request.user.is_admin and 
+                not request.user.is_staff and 
                 not course.participants.filter(id=request.user.id).exists()):
                 return Response(
                     {'error': 'You do not have permission to access this course'}, 
@@ -149,7 +149,7 @@ class CourseDetailView(APIView):
                 )
             
             # Use different serializer for admin users
-            if request.user.is_admin:
+            if request.user.is_staff:
                 serializer = CourseDetailSerializer(course, context={'request': request})
             else:
                 serializer = CourseListSerializer(course, context={'request': request})
