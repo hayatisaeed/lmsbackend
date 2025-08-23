@@ -107,7 +107,7 @@ class CourseListView(APIView):
             )
         
         try:
-            course = Course.objects.get(id=course_id)
+            course = get_object_or_404(Course, id=course_id)
             
             # Check if course is free
             if course.access_mode != Course.AccessMode.FREE:
