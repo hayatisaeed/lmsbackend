@@ -184,12 +184,17 @@ class IdentityInfo(models.Model):
     def save(self, *args, **kwargs):
         # Delete old files if avatar is being changed
         if self.pk:
-            old_instance = User.objects.get(pk=self.pk)
-            if old_instance.avatar and old_instance.avatar != self.avatar:
-                if default_storage.exists(old_instance.avatar.name):
-                    default_storage.delete(old_instance.avatar.name)
-                if old_instance.avatar_thumbnail and default_storage.exists(old_instance.avatar_thumbnail.name):
-                    default_storage.delete(old_instance.avatar_thumbnail.name)
+            try:
+                old_instance = User.objects.get(pk=self.pk)
+                if old_instance.avatar and old_instance.avatar != self.avatar:
+                    if default_storage.exists(old_instance.avatar.name):
+                        default_storage.delete(old_instance.avatar.name)
+                    if old_instance.avatar_thumbnail and default_storage.exists(old_instance.avatar_thumbnail.name):
+                        default_storage.delete(old_instance.avatar_thumbnail.name)
+            except User.DoesNotExist:
+                pass
+            except Exception as e:
+                pass
 
         # Process new avatar if provided
         if self.avatar and not self.avatar_thumbnail:
