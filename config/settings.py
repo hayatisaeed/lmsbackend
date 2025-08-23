@@ -214,7 +214,7 @@ else:
         o for o in os.getenv("ALLOWED_ORIGINS", "").split(",") if o
     ]
     CORS_ALLOWED_ORIGINS += ALLOWED_HOSTS
-    CSRF_TRUSTED_ORIGINS = CORS_ALLOWED_ORIGINS
+    CSRF_TRUSTED_ORIGINS = ALLOWED_HOSTS
 
 REST_FRAMEWORK = {
     "DEFAULT_RENDERER_CLASSES": ["rest_framework.renderers.JSONRenderer"],
