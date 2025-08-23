@@ -20,13 +20,13 @@ def get_local_ip():
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "change-me")
-DEBUG = os.getenv("DEBUG", "true") == "true"
-ALLOWED_HOSTS: List[str] = [
-    h for h in os.getenv("ALLOWED_HOSTS", "").split(",") if h
-] or ["*"]
 
+DEBUG = os.getenv("DEBUG", "false").lower() == "true"
+
+ALLOWED_HOSTS = [h.strip() for h in os.getenv("ALLOWED_HOSTS", "").split(",") if h.strip()]
 if DEBUG:
     ALLOWED_HOSTS = ["*"]
+
 
 INSTALLED_APPS = [
     "django.contrib.admin",
@@ -204,17 +204,20 @@ API_KEY = os.getenv("API_KEY", "")
 MAX_UPLOAD_SIZE = 5 * 1024 * 1024  # 5MB
 ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
 
-CORS_ALLOW_CREDENTIALS = True
 
+# Full origins with scheme (https://...), comma-separated
+ALLOWED_ORIGINS = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", "").split(",") if o.strip()]
+
+# CORS (only if you actually need cross-origin API calls)
+CORS_ALLOW_CREDENTIALS = True
 if DEBUG:
-    local_ip = get_local_ip()
     CORS_ORIGIN_ALLOW_ALL = True
 else:
-    CORS_ALLOWED_ORIGINS: List[str] = [
-        o for o in os.getenv("ALLOWED_ORIGINS", "").split(",") if o
-    ]
-    CORS_ALLOWED_ORIGINS += ALLOWED_HOSTS
-    CSRF_TRUSTED_ORIGINS = ALLOWED_HOSTS
+    CORS_ALLOWED_ORIGINS = ALLOWED_ORIGINS
+
+# CSRF must be URL origins (with scheme), not hostnames
+if not DEBUG:
+    CSRF_TRUSTED_ORIGINS = ALLOWED_ORIGINS
 
 REST_FRAMEWORK = {
     "DEFAULT_RENDERER_CLASSES": ["rest_framework.renderers.JSONRenderer"],
