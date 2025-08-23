@@ -3,14 +3,24 @@ from datetime import timedelta
 from pathlib import Path
 from typing import List
 from urllib.parse import urlparse
-
+import socket
 from dotenv import load_dotenv
 
 load_dotenv()
 
+def get_local_ip():
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except:
+        return None
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "change-me")
-DEBUG = os.getenv("DEBUG", "1") == "1"
+DEBUG = os.getenv("DEBUG", "true") == "true"
 ALLOWED_HOSTS: List[str] = [
     h for h in os.getenv("ALLOWED_HOSTS", "").split(",") if h
 ] or ["*"]
@@ -177,10 +187,23 @@ MAX_UPLOAD_SIZE = 5 * 1024 * 1024  # 5MB
 ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
 
 CORS_ALLOW_CREDENTIALS = True
-CORS_ALLOWED_ORIGINS: List[str] = [
-    o for o in os.getenv("ALLOWED_ORIGINS", "").split(",") if o
-]
-CSRF_TRUSTED_ORIGINS = CORS_ALLOWED_ORIGINS
+
+if DEBUG:
+    local_ip = get_local_ip()
+    CORS_ORIGIN_ALLOW_ALL = True
+    CSRF_TRUSTED_ORIGINS = [
+        f"http://{local_ip}:3000",
+        f"http://{local_ip}:8000",
+        "http://localhost:3000",
+        "http://localhost:8000",
+        "http://127.0.0.1:3000", 
+        "http://127.0.0.1:8000",
+    ]
+else:
+    CORS_ALLOWED_ORIGINS: List[str] = [
+        o for o in os.getenv("ALLOWED_ORIGINS", "").split(",") if o
+    ]
+    CSRF_TRUSTED_ORIGINS = CORS_ALLOWED_ORIGINS
 
 REST_FRAMEWORK = {
     "DEFAULT_RENDERER_CLASSES": ["rest_framework.renderers.JSONRenderer"],
