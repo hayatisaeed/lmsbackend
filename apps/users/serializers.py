@@ -254,164 +254,7 @@ class SchoolTypeSerializer(serializers.ModelSerializer):
         fields = ['name', 'slug']
 
 
-class EducationSerializer(serializers.Serializer):
-    level = serializers.PrimaryKeyRelatedField(queryset=EducationalLevel.objects.all())
-    grade = serializers.PrimaryKeyRelatedField(queryset=EducationalGrade.objects.all())
-    study_branch = serializers.PrimaryKeyRelatedField(
-        queryset=StudyBranch.objects.all(), required=False, allow_null=True
-    )
-    olympiad_ids = serializers.PrimaryKeyRelatedField(
-        queryset=Olympiad.objects.filter(published=True),
-        many=True,
-        required=False,
-    )
-    # Add new fields
-    school_name = serializers.CharField(required=False, allow_blank=True)
-    school_type = serializers.PrimaryKeyRelatedField(
-        queryset=SchoolType.objects.all(), required=False, allow_null=True
-    )
-    # Location fields
-    province_id = serializers.PrimaryKeyRelatedField(
-        queryset=Province.objects.all(), required=False, allow_null=True
-    )
-    city_id = serializers.PrimaryKeyRelatedField(
-        queryset=City.objects.all(), required=False, allow_null=True
-    )
-    province = serializers.CharField(required=False)
-    city = serializers.CharField(required=False)
-
-    def validate(self, attrs):
-        # Existing validation
-        level: EducationalLevel = attrs["level"]
-        grade: EducationalGrade = attrs["grade"]
-        if grade.level_id != level.id:
-            raise serializers.ValidationError({"grade": "invalid"})
-        branch = attrs.get("study_branch")
-        if level.is_high_school:
-            if not branch:
-                raise serializers.ValidationError({"study_branch": "required"})
-            if branch.level_id != level.id:
-                raise serializers.ValidationError({"study_branch": "invalid"})
-        olympiads = attrs.get("olympiad_ids", [])
-        if len({o.id for o in olympiads}) > 3:
-            raise serializers.ValidationError({"olympiad_ids": "too_many"})
-        
-        # New school validation
-        school_name = attrs.get("school_name")
-        school_type = attrs.get("school_type")
-        if school_name and not school_type:
-            raise serializers.ValidationError({"school_type": "required_with_school_name"})
-        if school_type and not school_name:
-            raise serializers.ValidationError({"school_name": "required_with_school_type"})
-        
-        # Location validation
-        province = attrs.get("province_id")
-        city = attrs.get("city_id")
-        if not province or not city:
-            pname = attrs.get("province")
-            cname = attrs.get("city")
-            if pname and cname:
-                try:
-                    province = Province.objects.get(name__iexact=pname)
-                    city = City.objects.get(name__iexact=cname, province=province)
-                except (Province.DoesNotExist, City.DoesNotExist):
-                    raise serializers.ValidationError({"location": "invalid"}) from None
-            else:
-                # Location is optional in updates, only validate if partial data provided
-                if any([pname, cname, attrs.get('province_id'), attrs.get('city_id')]):
-                    raise serializers.ValidationError({"location": "invalid"})
-        else:
-            if city.province_id != province.id:
-                raise serializers.ValidationError({"location": "invalid"})
-        
-        attrs["province_obj"] = province
-        attrs["city_obj"] = city
-        return attrs
-
-    def save(self, **kwargs):
-        user = self.context["request"].user
-        
-        # Save educational profile with new fields
-        profile, _ = EducationalProfile.objects.update_or_create(
-            user=user,
-            defaults={
-                "level": self.validated_data["level"],
-                "grade": self.validated_data["grade"],
-                "study_branch": self.validated_data.get("study_branch"),
-                "school_name": self.validated_data.get("school_name", ""),
-                "school_type": self.validated_data.get("school_type"),
-            },
-        )
-        
-        if "olympiad_ids" in self.validated_data:
-            profile.olympiads.set(self.validated_data["olympiad_ids"])
-        
-        # Save location if provided
-        if "province_obj" in self.validated_data and "city_obj" in self.validated_data:
-            Location.objects.update_or_create(
-                user=user,
-                defaults={
-                    "province": self.validated_data["province_obj"],
-                    "city": self.validated_data["city_obj"],
-                },
-            )
-            user.profile_location = True
-            user.save(update_fields=["profile_location"])
-        
-        user.profile_education = True
-        user.save(update_fields=["profile_education"])
-        
-        return {"ok": True}
-
-
-class EducationUpdateSerializer(serializers.Serializer):
-    level = serializers.PrimaryKeyRelatedField(
-        queryset=EducationalLevel.objects.all(), 
-        required=False
-    )
-    grade = serializers.PrimaryKeyRelatedField(
-        queryset=EducationalGrade.objects.all(), 
-        required=False
-    )
-    # Include other fields that might be needed for update
-    study_branch = serializers.PrimaryKeyRelatedField(
-        queryset=StudyBranch.objects.all(), 
-        required=False, 
-        allow_null=True
-    )
-    school_name = serializers.CharField(required=False)
-    school_type = serializers.PrimaryKeyRelatedField(
-        queryset=SchoolType.objects.all(), 
-        required=False
-    )
-
-    def validate(self, attrs):
-        # If either level or grade is provided, both must be provided
-        if ('level' in attrs or 'grade' in attrs) and not ('level' in attrs and 'grade' in attrs):
-            raise serializers.ValidationError("Both level and grade must be provided together")
-        
-        # Validate level-grade consistency if both are provided
-        if 'level' in attrs and 'grade' in attrs:
-            if attrs['grade'].level != attrs['level']:
-                raise serializers.ValidationError("grade_invalid_for_level")
-        
-        # Validate study_branch consistency if provided
-        if 'study_branch' in attrs and attrs['study_branch']:
-            level = attrs.get('level', self.instance.level if self.instance else None)
-            if level and attrs['study_branch'].level != level:
-                raise serializers.ValidationError("study_branch_invalid_for_level")
-        
-        return attrs
-
-    def update(self, instance, validated_data):
-        # Update only the fields that are provided
-        for attr, value in validated_data.items():
-            setattr(instance, attr, value)
-        
-        # Run model validation
-        instance.full_clean()
-        instance.save()
-        return instance
+#### educational profile serializer
 
 
 class LocationSerializer(serializers.Serializer):
@@ -569,3 +412,134 @@ class ProvinceListSerializer(serializers.ModelSerializer):
     class Meta:
         model = Province
         fields = ["id", "name", "slug", "cities_count"]
+
+
+class EducationalGradeSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = EducationalGrade
+        fields = ['id', 'name', 'level']
+
+
+class EducationalProfileSerializer(serializers.ModelSerializer):
+    level = EducationalLevelSerializer(read_only=True)
+    level_id = serializers.PrimaryKeyRelatedField(
+        queryset=EducationalLevel.objects.all(), 
+        source='level', 
+        write_only=True, 
+        required=False,
+        allow_null=True
+    )
+    grade = EducationalGradeSerializer(read_only=True)
+    grade_id = serializers.PrimaryKeyRelatedField(
+        queryset=EducationalGrade.objects.all(), 
+        source='grade', 
+        write_only=True, 
+        required=False,
+        allow_null=True
+    )
+    study_branch = StudyBranchSerializer(read_only=True)
+    study_branch_id = serializers.PrimaryKeyRelatedField(
+        queryset=StudyBranch.objects.all(), 
+        source='study_branch', 
+        write_only=True, 
+        required=False,
+        allow_null=True
+    )
+    olympiads = OlympiadSerializer(many=True, read_only=True)
+    olympiad_ids = serializers.PrimaryKeyRelatedField(
+        queryset=Olympiad.objects.all(), 
+        many=True, 
+        source='olympiads', 
+        write_only=True,
+        required=False
+    )
+    school_type = SchoolTypeSerializer(read_only=True)
+    school_type_id = serializers.PrimaryKeyRelatedField(
+        queryset=SchoolType.objects.all(), 
+        source='school_type', 
+        write_only=True,
+        required=False
+    )
+    location = LocationSerializer(source='user.location', read_only=True)
+    province_id = serializers.PrimaryKeyRelatedField(
+        queryset=Province.objects.all(), 
+        write_only=True, 
+        required=False
+    )
+    city_id = serializers.PrimaryKeyRelatedField(
+        queryset=City.objects.all(), 
+        write_only=True, 
+        required=False
+    )
+    
+    class Meta:
+        model = EducationalProfile
+        fields = [
+            'id', 'level', 'level_id', 'grade', 'grade_id', 'study_branch', 
+            'study_branch_id', 'olympiads', 'olympiad_ids', 'school_name', 
+            'school_type', 'school_type_id', 'location', 'province_id', 'city_id'
+        ]
+    
+    def validate(self, data):
+        # Validate grade matches level if both are provided
+        level = data.get('level')
+        grade = data.get('grade')
+        study_branch = data.get('study_branch')
+        
+        if grade and level and grade.level != level:
+            raise serializers.ValidationError({
+                'grade_id': 'Selected grade does not belong to the selected level'
+            })
+            
+        if study_branch and level and study_branch.level != level:
+            raise serializers.ValidationError({
+                'study_branch_id': 'Selected study branch does not belong to the selected level'
+            })
+            
+        # Validate location if provided
+        province = data.get('province_id')
+        city = data.get('city_id')
+        
+        if province and city and city.province != province:
+            raise serializers.ValidationError({
+                'city_id': 'Selected city does not belong to the selected province'
+            })
+            
+        return data
+    
+    def create(self, validated_data):
+        # Extract location data
+        province = validated_data.pop('province_id', None)
+        city = validated_data.pop('city_id', None)
+        
+        # Create educational profile
+        profile = EducationalProfile.objects.create(**validated_data)
+        
+        # Create location if provided
+        if province and city:
+            Location.objects.create(
+                user=profile.user,
+                province=province,
+                city=city
+            )
+        
+        return profile
+    
+    def update(self, instance, validated_data):
+        # Extract location data
+        province = validated_data.pop('province_id', None)
+        city = validated_data.pop('city_id', None)
+        
+        # Update educational profile
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save()
+        
+        # Update location if provided
+        if province and city:
+            location, created = Location.objects.get_or_create(user=instance.user)
+            location.province = province
+            location.city = city
+            location.save()
+        
+        return instance

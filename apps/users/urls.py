@@ -1,7 +1,8 @@
 from django.urls import path
 
 from .profile_views import (
-    EducationView,
+    #EducationView,
+    EducationalProfileView,
     IdentityView,
     LocationView,
     ParentVerifyView,
@@ -35,7 +36,7 @@ urlpatterns = [
 
     # Profile Views and Endpoints
     path("profile/identity", IdentityView.as_view()),
-    path("profile/education", EducationView.as_view()),
+    path("profile/education", EducationalProfileView.as_view()),
     path("profile/location", LocationView.as_view()),
     path("profile/parent", ParentView.as_view()),
     path("profile/parent/verify", ParentVerifyView.as_view()),

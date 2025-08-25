@@ -14,13 +14,12 @@ from .models import (
     ParentContact,
 )
 from .serializers import (
-    EducationSerializer,
     IdentitySerializer,
     LocationSerializer,
     ParentSerializer,
     ParentVerifySerializer,
     UserUpdateSerializer,
-    EducationUpdateSerializer,
+    EducationalProfileSerializer,
 )
 
 identity_submit_total = Counter(  # pragma: no cover
@@ -136,103 +135,45 @@ class UserAvatarAPIView(APIView):
         
         return Response({'status': 'success'}, status=status.HTTP_200_OK)
 
-
 @extend_schema(tags=["Profile"])
-class EducationView(APIView):
+class EducationalProfileView(APIView):
     permission_classes = [IsAuthenticated]
-
+    
     @extend_schema(
-        request=EducationSerializer,
+        request=EducationalProfileSerializer,
         responses={
-            200: EducationSerializer,
+            200: EducationalProfileSerializer,
             400: OpenApiResponse(description="Validation error"),
         },
     )
-    def post(self, request):
-        return self._handle_education_request(request, is_partial=False)
-
+    def get(self, request):
+        # Get or create educational profile for the user
+        profile, created = EducationalProfile.objects.get_or_create(user=request.user)
+        serializer = EducationalProfileSerializer(profile)
+        return Response(serializer.data)
+    
     @extend_schema(
-        request=EducationSerializer,
+        request=EducationalProfileSerializer,
         responses={
-            200: EducationSerializer,
-            400: OpenApiResponse(description="Validation error"),
-        },
-    )
-    def put(self, request):
-        return self._handle_education_request(request, is_partial=True)
-
-    @extend_schema(
-        request=EducationSerializer,
-        responses={
-            200: EducationSerializer,
+            200: EducationalProfileSerializer,
             400: OpenApiResponse(description="Validation error"),
         },
     )
     def patch(self, request):
-        return self._handle_education_request(request, is_partial=True)
-
-    def _handle_education_request(self, request, is_partial=False):
-        if is_partial:
-            EducationSerializerClass = EducationUpdateSerializer
-            try:
-                instance = request.user.educationalprofile
-            except EducationalProfile.DoesNotExist:
-                return Response({"error": "Educational profile does not exist"}, status=404)
-        else:
-            EducationSerializerClass = EducationSerializer
-            instance = None
+        # Get or create educational profile for the user
+        profile, created = EducationalProfile.objects.get_or_create(user=request.user)
         
-        # Handle education data
-        education_serializer = EducationSerializerClass(
-            instance=instance,
+        serializer = EducationalProfileSerializer(
+            profile, 
             data=request.data, 
-            context={"request": request},
-            partial=is_partial
+            partial=True
         )
         
-        # Handle location data if provided
-        location_data = {}
-        location_fields = ["province_id", "city_id", "province", "city"]
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
         
-        for field in location_fields:
-            if field in request.data:
-                location_data[field] = request.data.get(field)
-        
-        location_serializer = None
-        if location_data:
-            location_serializer = LocationSerializer(
-                data=location_data, 
-                context={"request": request}
-            )
-            location_is_valid = location_serializer.is_valid()
-        else:
-            location_is_valid = True
-        
-        education_is_valid = education_serializer.is_valid()
-        
-        if education_is_valid and location_is_valid:
-            # Save education data
-            education_result = education_serializer.save()
-            
-            # Save location data if provided
-            location_result = None
-            if location_serializer:
-                location_result = location_serializer.save()
-            
-            response_data = {"ok": True}
-            if location_result:
-                response_data["location_updated"] = True
-            
-            return Response(response_data)
-        
-        # Combine errors
-        errors = {}
-        if not education_is_valid:
-            errors.update(education_serializer.errors)
-        if location_serializer and not location_is_valid:
-            errors.update(location_serializer.errors)
-        
-        return Response({"error": errors}, status=400)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 @extend_schema(tags=["Profile"])
@@ -316,6 +257,7 @@ class ProfileView(APIView):
                 "father_name": info.father_name,
                 "gender": info.gender,
                 "verified": info.verified,
+                "avatar": info.avatar.url if info.avatar else None,
             }
             profile["parent"] = {
                 "required": info.requires_parent,

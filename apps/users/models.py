@@ -311,8 +311,8 @@ class SchoolType(models.Model):
 
 class EducationalProfile(models.Model):
     user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
-    level = models.ForeignKey(EducationalLevel, on_delete=models.CASCADE)
-    grade = models.ForeignKey(EducationalGrade, on_delete=models.CASCADE)
+    level = models.ForeignKey(EducationalLevel, on_delete=models.CASCADE, null=True, blank=True)
+    grade = models.ForeignKey(EducationalGrade, on_delete=models.CASCADE, null=True, blank=True)
     study_branch = models.ForeignKey(
         StudyBranch, on_delete=models.SET_NULL, null=True, blank=True
     )
