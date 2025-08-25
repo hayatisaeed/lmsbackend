@@ -108,6 +108,20 @@ class PhoneNumberField(serializers.CharField):
         return value
 
 
+class UserUpdateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ['display_name', 'email']
+    
+    def validate_email(self, value):
+        """Convert empty email to None and check uniqueness"""
+        if value == '':
+            value = None
+        if value and User.objects.filter(email=value).exclude(pk=self.instance.pk).exists():
+            raise serializers.ValidationError("A user with this email already exists.")
+        return value
+
+
 class RequestOTPSerializer(serializers.Serializer):
     phone = PhoneNumberField(required=True)
 
@@ -350,6 +364,56 @@ class EducationSerializer(serializers.Serializer):
         return {"ok": True}
 
 
+class EducationUpdateSerializer(serializers.Serializer):
+    level = serializers.PrimaryKeyRelatedField(
+        queryset=EducationalLevel.objects.all(), 
+        required=False
+    )
+    grade = serializers.PrimaryKeyRelatedField(
+        queryset=EducationalGrade.objects.all(), 
+        required=False
+    )
+    # Include other fields that might be needed for update
+    study_branch = serializers.PrimaryKeyRelatedField(
+        queryset=StudyBranch.objects.all(), 
+        required=False, 
+        allow_null=True
+    )
+    school_name = serializers.CharField(required=False)
+    school_type = serializers.PrimaryKeyRelatedField(
+        queryset=SchoolType.objects.all(), 
+        required=False
+    )
+
+    def validate(self, attrs):
+        # If either level or grade is provided, both must be provided
+        if ('level' in attrs or 'grade' in attrs) and not ('level' in attrs and 'grade' in attrs):
+            raise serializers.ValidationError("Both level and grade must be provided together")
+        
+        # Validate level-grade consistency if both are provided
+        if 'level' in attrs and 'grade' in attrs:
+            if attrs['grade'].level != attrs['level']:
+                raise serializers.ValidationError("grade_invalid_for_level")
+        
+        # Validate study_branch consistency if provided
+        if 'study_branch' in attrs and attrs['study_branch']:
+            level = attrs.get('level', self.instance.level if self.instance else None)
+            if level and attrs['study_branch'].level != level:
+                raise serializers.ValidationError("study_branch_invalid_for_level")
+        
+        return attrs
+
+    def update(self, instance, validated_data):
+        # Update only the fields that are provided
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        
+        # Run model validation
+        instance.full_clean()
+        instance.save()
+        return instance
+
+
 class LocationSerializer(serializers.Serializer):
     province_id = serializers.PrimaryKeyRelatedField(
         queryset=Province.objects.all(), required=False, allow_null=True
@@ -417,7 +481,7 @@ class LocationSerializer(serializers.Serializer):
 
 
 class ParentSerializer(serializers.Serializer):
-    phone = serializers.CharField()
+    phone = PhoneNumberField(required=True)
     relation = serializers.ChoiceField(choices=["father", "mother", "guardian"])
 
     def validate_phone(self, value):

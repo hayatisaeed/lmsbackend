@@ -19,6 +19,8 @@ from .serializers import (
     LocationSerializer,
     ParentSerializer,
     ParentVerifySerializer,
+    UserUpdateSerializer,
+    EducationUpdateSerializer,
 )
 
 identity_submit_total = Counter(  # pragma: no cover
@@ -170,8 +172,19 @@ class EducationView(APIView):
         return self._handle_education_request(request, is_partial=True)
 
     def _handle_education_request(self, request, is_partial=False):
+        if is_partial:
+            EducationSerializerClass = EducationUpdateSerializer
+            try:
+                instance = request.user.educationalprofile
+            except EducationalProfile.DoesNotExist:
+                return Response({"error": "Educational profile does not exist"}, status=404)
+        else:
+            EducationSerializerClass = EducationSerializer
+            instance = None
+        
         # Handle education data
-        education_serializer = EducationSerializer(
+        education_serializer = EducationSerializerClass(
+            instance=instance,
             data=request.data, 
             context={"request": request},
             partial=is_partial
@@ -338,6 +351,20 @@ class ProfileView(APIView):
             "percent_complete"
         ]
         return Response(profile)
+    
+    @extend_schema(
+        request=UserUpdateSerializer,
+        responses={200: UserUpdateSerializer}
+    )
+    def put(self, request):
+        serializer = UserUpdateSerializer(
+            instance=request.user,
+            data=request.data,
+            partial=False
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)
 
 
 @extend_schema(tags=["Profile"])

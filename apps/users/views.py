@@ -220,7 +220,7 @@ class LogoutView(APIView):
 
 @extend_schema(tags=["Auth"])
 class SessionView(APIView):
-    parser_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated]
     @extend_schema(
         responses={200: OpenApiResponse(description="Current session info")}
     )
@@ -239,5 +239,5 @@ class SessionView(APIView):
         }
         if user.is_new_user:
             user.is_new_user = False
-            user.save(update_fields=["is_new_user"])
+            user.save(update_fields=["is_snew_user"])
         return Response(data)
