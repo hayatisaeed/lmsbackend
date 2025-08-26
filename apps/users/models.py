@@ -318,7 +318,7 @@ class EducationalProfile(models.Model):
     )
     olympiads = models.ManyToManyField(Olympiad, blank=True)
     school_name = models.CharField(max_length=100)
-    school_type = models.ForeignKey(SchoolType, on_delete=models.PROTECT)
+    school_type = models.ForeignKey(SchoolType, on_delete=models.PROTECT, null=True, blank=True)
 
     def clean(self):
         if self.grade.level_id != self.level_id:
