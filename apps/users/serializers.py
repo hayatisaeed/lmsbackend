@@ -526,14 +526,21 @@ class EducationalProfileSerializer(serializers.ModelSerializer):
         return profile
     
     def update(self, instance, validated_data):
+        # Extract many-to-many fields first
+        olympiad_ids = validated_data.pop('olympiads', None)
+        
         # Extract location data
         province = validated_data.pop('province_id', None)
         city = validated_data.pop('city_id', None)
         
-        # Update educational profile
+        # Update regular fields
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
         instance.save()
+        
+        # Update many-to-many fields if provided
+        if olympiad_ids is not None:
+            instance.olympiads.set(olympiad_ids)
         
         # Update location if provided
         if province and city:
