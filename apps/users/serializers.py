@@ -251,7 +251,7 @@ class IdentitySerializer(serializers.Serializer):
 class SchoolTypeSerializer(serializers.ModelSerializer):
     class Meta:
         model = SchoolType
-        fields = ['name', 'slug']
+        fields = ['id', 'name', 'slug']
 
 
 #### educational profile serializer
