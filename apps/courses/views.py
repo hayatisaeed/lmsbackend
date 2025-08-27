@@ -544,12 +544,12 @@ class AttemptStartView(APIView):
         return Response(detail.data, status=status.HTTP_201_CREATED)
 
 
-@extend_schema(tags=["Attempts"])
+@extend_schema(tags=["Attempts"], request=AttemptDetailSerializer)
 class AttemptDetailView(APIView):
     permission_classes = [IsAuthenticated, IsAttemptOwner]
 
     def get(self, request, attempt_id):
-        attempt = get_object_or_404(Attempt, pk=attempt_id)
+        attempt = get_object_or_404(Attempt, id=attempt_id)
         self.check_object_permissions(request, attempt)
         serializer = AttemptDetailSerializer(attempt)
         return Response(serializer.data)
