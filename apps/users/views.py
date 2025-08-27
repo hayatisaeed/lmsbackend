@@ -239,5 +239,5 @@ class SessionView(APIView):
         }
         if user.is_new_user:
             user.is_new_user = False
-            user.save(update_fields=["is_snew_user"])
+            user.save(update_fields=["is_new_user"])
         return Response(data)
