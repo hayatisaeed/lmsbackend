@@ -161,7 +161,7 @@ class VerifyOTPSerializer(serializers.Serializer):
         return user
 
 
-
+'''
 class IdentitySerializer(serializers.Serializer):
     national_id = serializers.CharField(min_length=10, max_length=10)
     date_of_birth = serializers.DateField()
@@ -246,7 +246,78 @@ class IdentitySerializer(serializers.Serializer):
             "requires_parent": info.requires_parent if info.verified else False,
             "error": None if info.verified else result.get('error')
         }
+'''
 
+class IdentitySerializer(serializers.Serializer):
+    national_id = serializers.CharField(min_length=10, max_length=10)
+    date_of_birth = serializers.DateField()
+    first_name = serializers.CharField(max_length=100)
+    last_name = serializers.CharField(max_length=100)
+    father_name = serializers.CharField(max_length=100)
+    gender = serializers.ChoiceField(choices=[(0, 'Unknown'), (1, 'Male'), (2, 'Female')])
+
+    def validate_national_id(self, value):
+        """Validate national ID format"""
+        if not value.isdigit() or len(value) != 10:
+            raise serializers.ValidationError("Invalid national ID format")
+        return value
+
+    def validate(self, attrs):
+        """Validate submission rate limits"""
+        user = self.context["request"].user
+        info, _ = IdentityInfo.objects.get_or_create(user=user)
+        now = timezone.now()
+        
+        # Check if user has exceeded submission limits
+        if info.last_attempt_at and now - info.last_attempt_at < timedelta(hours=24):
+            if info.submission_count >= settings.IDENTITY_MAX_ATTEMPTS:
+                raise serializers.ValidationError("identity_rate_limited")
+            info.submission_count += 1
+        else:
+            # Reset counter if more than 24 hours have passed
+            info.submission_count = 1
+        
+        info.last_attempt_at = now
+        info.save(update_fields=["submission_count", "last_attempt_at"])
+        
+        return attrs
+
+    def save(self, **kwargs):
+        """Manually save identity information (temporary solution during provider downtime)"""
+        user = self.context["request"].user
+        national_id = self.validated_data["national_id"]
+        date_of_birth = self.validated_data["date_of_birth"]
+        
+        # Format date for storage
+        dob_formatted = f"{date_of_birth.year}/{date_of_birth.month}/{date_of_birth.day}"
+        
+        # Get or create identity info
+        info, created = IdentityInfo.objects.get_or_create(user=user)
+        
+        # Update identity info with user-provided data
+        info.national_id = crypto_service.encrypt_str(national_id)
+        info.date_of_birth = crypto_service.encrypt_str(dob_formatted)
+        info.first_name = self.validated_data.get("first_name", "")
+        info.last_name = self.validated_data.get("last_name", "")
+        info.father_name = self.validated_data.get("father_name", "")
+        info.gender = self.validated_data.get("gender", 0)
+        info.verified = True  # Mark as verified since we're trusting user input
+        
+        # Calculate age and check if parent is required
+        age = (timezone.now().date() - date_of_birth).days // 365
+        info.requires_parent = age < getattr(settings, 'AGE_THRESHOLD', 18)
+        
+        info.save()
+        
+        # Update user profile
+        user.profile_identity = True
+        user.save(update_fields=["profile_identity"])
+        
+        return {
+            "status": "verified",
+            "requires_parent": info.requires_parent,
+            "error": None
+        }
 
 class SchoolTypeSerializer(serializers.ModelSerializer):
     class Meta:
