@@ -301,6 +301,7 @@ class ActiveExamSerializer(serializers.Serializer):
     end_at = serializers.DateTimeField()
     started = serializers.BooleanField()
     attempt_status = serializers.CharField(allow_null=True)
+    attempt_id = serializers.UUIDField(allow_null=True)
     expires_at = serializers.DateTimeField(allow_null=True)
 
 

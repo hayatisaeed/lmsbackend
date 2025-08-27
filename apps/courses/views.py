@@ -189,18 +189,18 @@ class ExamListCreateView(APIView):
 class ExamDetailView(APIView):
     permission_classes = [IsAuthenticated, IsExamAdmin]
 
-    def get_object(self, request, pk):
-        exam = get_object_or_404(Exam, pk=pk)
+    def get_object(self, request, exam_id):
+        exam = get_object_or_404(Exam, id=exam_id)
         self.check_object_permissions(request, exam)
         return exam
 
-    def get(self, request, pk):
-        exam = self.get_object(request, pk)
+    def get(self, request, exam_id):
+        exam = self.get_object(request, id=exam_id)
         serializer = ExamSerializer(exam)
         return Response(serializer.data)
 
-    def patch(self, request, pk):
-        exam = self.get_object(request, pk)
+    def patch(self, request, exam_id):
+        exam = self.get_object(request, id=exam_id)
         serializer = ExamSerializer(exam, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         serializer.save()
@@ -251,18 +251,18 @@ class QuestionCreateView(APIView):
 class QuestionDetailView(APIView):
     permission_classes = [IsAuthenticated, IsExamAdmin]
 
-    def get_object(self, request, pk):
-        question = get_object_or_404(Question, pk=pk)
+    def get_object(self, request, question_id):
+        question = get_object_or_404(Question, id=question_id)
         self.check_object_permissions(request, question)
         return question
 
-    def get(self, request, pk):
-        question = self.get_object(request, pk)
+    def get(self, request, question_id):
+        question = self.get_object(request, id=question_id)
         serializer = QuestionSerializer(question)
         return Response(serializer.data)
 
-    def patch(self, request, pk):
-        question = self.get_object(request, pk)
+    def patch(self, request, question_id):
+        question = self.get_object(request, id=question_id)
         serializer = QuestionSerializer(
             question, data=request.data, partial=True
         )
@@ -270,8 +270,8 @@ class QuestionDetailView(APIView):
         serializer.save()
         return Response(serializer.data)
 
-    def delete(self, request, pk):
-        question = self.get_object(request, pk)
+    def delete(self, request, question_id):
+        question = self.get_object(request, id=question_id)
         exam = question.exam
         if exam.status != Exam.Status.DRAFT or exam.attempts.exists():
             raise ValidationError("exam_locked")
@@ -348,8 +348,8 @@ class QuestionAssetUploadView(QuestionFileUploadView):
 class QuestionFileDeleteView(APIView):
     permission_classes = [IsAuthenticated, IsExamAdmin]
 
-    def delete(self, request, pk):
-        instance = get_object_or_404(QuestionFile, pk=pk)
+    def delete(self, request, qf_id):
+        instance = get_object_or_404(QuestionFile, id=qf_id)
         exam = instance.question.exam
         self.check_object_permissions(request, exam)
         if exam.status != Exam.Status.DRAFT or exam.attempts.exists():
@@ -436,14 +436,14 @@ class AnswerFileUploadView(APIView):
 class FileServeView(APIView):
     permission_classes = [IsAuthenticated]
 
-    def get(self, request, pk):
+    def get(self, request, file_id):
         try:
-            qf = QuestionFile.objects.get(pk=pk)
+            qf = QuestionFile.objects.get(id=file_id)
             if qf.question.exam.created_by_id != request.user.id:
                 raise PermissionDenied()
             return Response(status=status.HTTP_302_FOUND, headers={"Location": qf.file})
         except QuestionFile.DoesNotExist:
-            af = get_object_or_404(AnswerFile, pk=pk)
+            af = get_object_or_404(AnswerFile, id=file_id)
             attempt = af.answer.attempt
             if (
                 attempt.user_id != request.user.id
@@ -476,7 +476,7 @@ class ExamAssignmentListView(APIView):
     pagination_class = PageNumberPagination
 
     def get(self, request, exam_id):
-        exam = get_object_or_404(Exam, pk=exam_id)
+        exam = get_object_or_404(Exam, id=exam_id)
         self.check_object_permissions(request, exam)
         qs = exam.assignments.all()
         paginator = self.pagination_class()
@@ -583,7 +583,7 @@ class AttemptSubmitView(APIView):
     permission_classes = [IsAuthenticated, IsAttemptOwner]
 
     def post(self, request, attempt_id):
-        attempt = get_object_or_404(Attempt, pk=attempt_id)
+        attempt = get_object_or_404(Attempt, id=attempt_id)
         self.check_object_permissions(request, attempt)
         serializer = AttemptSubmitSerializer(
             data=request.data, context={"attempt": attempt}
@@ -598,7 +598,7 @@ class AttemptResultView(APIView):
     permission_classes = [IsAuthenticated, IsAttemptOwner]
 
     def get(self, request, attempt_id):
-        attempt = get_object_or_404(Attempt, pk=attempt_id)
+        attempt = get_object_or_404(Attempt, id=attempt_id)
         self.check_object_permissions(request, attempt)
         serializer = AttemptResultSerializer(attempt)
         return Response(serializer.data)
@@ -609,7 +609,7 @@ class GraderAssignmentView(APIView):
     permission_classes = [IsAuthenticated, IsExamAdmin]
 
     def post(self, request, exam_id):
-        exam = get_object_or_404(Exam, pk=exam_id)
+        exam = get_object_or_404(Exam, id=exam_id)
         self.check_object_permissions(request, exam)
         payload = {**request.data, "exam": exam.id}
         serializer = GraderAssignmentSerializer(data=payload)
@@ -628,7 +628,7 @@ class GradingQueueView(APIView):
     permission_classes = [IsAuthenticated, IsGrader]
 
     def get(self, request, exam_id):
-        exam = get_object_or_404(Exam, pk=exam_id)
+        exam = get_object_or_404(Exam, id=exam_id)
         self.check_object_permissions(request, exam)
         attempts = exam.attempts.filter(status=Attempt.Status.SUBMITTED)
         data = [
@@ -647,7 +647,7 @@ class GradeAnswerView(APIView):
     permission_classes = [IsAuthenticated, IsGrader]
 
     def post(self, request, answer_id):
-        answer = get_object_or_404(Answer, pk=answer_id)
+        answer = get_object_or_404(Answer, id=answer_id)
         exam = answer.question.exam
         self.check_object_permissions(request, exam)
         payload = {
@@ -680,7 +680,7 @@ class FinalizeAttemptView(APIView):
     permission_classes = [IsAuthenticated, IsGrader]
 
     def post(self, request, attempt_id):
-        attempt = get_object_or_404(Attempt, pk=attempt_id)
+        attempt = get_object_or_404(Attempt, id=attempt_id)
         self.check_object_permissions(request, attempt.exam)
         graded_items = GradingItem.objects.filter(
             answer__attempt=attempt, status=GradingItem.Status.GRADED

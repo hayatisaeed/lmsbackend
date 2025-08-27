@@ -8,7 +8,7 @@ urlpatterns = [
     path('courses/', views.CourseListView.as_view(), name='course-list'),
     path('courses/<uuid:course_id>/', views.CourseDetailView.as_view(), name='course-detail'),
     path("exams/", views.ExamListCreateView.as_view(), name="exam-list"),
-    path("exams/<uuid:pk>/", views.ExamDetailView.as_view(), name="exam-detail"),
+    path("exams/<uuid:exam_id>/", views.ExamDetailView.as_view(), name="exam-detail"),
     path(
         "exams/<uuid:exam_id>/publish/",
         views.ExamPublishView.as_view(),
@@ -20,7 +20,7 @@ urlpatterns = [
         name="question-create",
     ),
     path(
-        "questions/<uuid:pk>/",
+        "questions/<uuid:question_id>/",
         views.QuestionDetailView.as_view(),
         name="question-detail",
     ),
@@ -35,7 +35,7 @@ urlpatterns = [
         name="question-file-upload",
     ),
     path(
-        "question-files/<uuid:pk>/",
+        "question-files/<uuid:qf_id>/",
         views.QuestionFileDeleteView.as_view(),
         name="question-file-delete",
     ),
@@ -49,7 +49,7 @@ urlpatterns = [
         views.AnswerFileUploadView.as_view(),
         name="answer-file-upload",
     ),
-    path("files/<uuid:pk>/", views.FileServeView.as_view(), name="file-serve"),
+    path("files/<uuid:file_id>/", views.FileServeView.as_view(), name="file-serve"),
     path(
         "exams/<uuid:exam_id>/assign-to-course/",
         views.ExamAssignView.as_view(),
