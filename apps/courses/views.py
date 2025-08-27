@@ -213,7 +213,7 @@ class ExamPublishView(APIView):
 
     @extend_schema(request=None, responses=ExamSerializer)
     def post(self, request, exam_id):
-        exam = get_object_or_404(Exam, pk=exam_id)
+        exam = get_object_or_404(Exam, id=exam_id)
         self.check_object_permissions(request, exam)
         serializer = ExamSerializer(
             exam, data={"status": Exam.Status.PUBLISHED}, partial=True
@@ -239,7 +239,7 @@ class QuestionCreateView(APIView):
     permission_classes = [IsAuthenticated, IsExamAdmin]
 
     def post(self, request, exam_id):
-        exam = get_object_or_404(Exam, pk=exam_id)
+        exam = get_object_or_404(Exam, id=exam_id)
         self.check_object_permissions(request, exam)
         serializer = QuestionSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -284,7 +284,7 @@ class MCQOptionCreateView(APIView):
     permission_classes = [IsAuthenticated, IsExamAdmin]
 
     def post(self, request, question_id):
-        question = get_object_or_404(Question, pk=question_id)
+        question = get_object_or_404(Question, id=question_id)
         self.check_object_permissions(request, question)
         if question.type != Question.Type.MCQ:
             raise ValidationError("not_mcq")
@@ -313,7 +313,7 @@ class QuestionFileUploadView(APIView):
     permission_classes = [IsAuthenticated, IsExamAdmin]
 
     def post(self, request, question_id):
-        question = get_object_or_404(Question, pk=question_id)
+        question = get_object_or_404(Question, id=question_id)
         self.check_object_permissions(request, question)
         if question.exam.status != Exam.Status.DRAFT or question.exam.attempts.exists():
             raise ValidationError("exam_locked")
@@ -367,7 +367,7 @@ class AnswerFileUploadView(APIView):
         upload = request.FILES.get("file")
         if not answer_id or not upload:
             raise ValidationError("answer_id_and_file_required")
-        answer = get_object_or_404(Answer, pk=answer_id)
+        answer = get_object_or_404(Answer, id=answer_id)
         if answer.attempt.user_id != request.user.id:
             raise PermissionDenied()
         question = answer.question
@@ -460,7 +460,7 @@ class ExamAssignView(APIView):
     permission_classes = [IsAuthenticated, IsExamAdmin]
 
     def post(self, request, exam_id):
-        exam = get_object_or_404(Exam, pk=exam_id)
+        exam = get_object_or_404(Exam, id=exam_id)
         self.check_object_permissions(request, exam)
         data = request.data.copy()
         data["exam"] = str(exam_id)
@@ -512,6 +512,7 @@ class ActiveExamsListView(APIView):
                     "end_at": assignment.end_at,
                     "started": bool(attempt),
                     "attempt_status": attempt.status if attempt else None,
+                    "attempt_id": attempt.id if attempt else None,
                     "expires_at": attempt.expires_at if attempt else None,
                 }
             )
@@ -524,7 +525,7 @@ class AttemptStartView(APIView):
     permission_classes = [IsAuthenticated, IsEnrolledInCourse]
 
     def post(self, request, course_id, exam_id):
-        exam = get_object_or_404(Exam, pk=exam_id)
+        exam = get_object_or_404(Exam, id=exam_id)
         data = {"exam": str(exam_id), "course": str(course_id)}
         serializer = AttemptStartSerializer(
             data=data, context={"request": request}
@@ -536,6 +537,7 @@ class AttemptStartView(APIView):
                 existing = Attempt.objects.get(
                     user=request.user, exam=exam, course_id=course_id
                 )
+                self.check_object_permissions(request, existing)
                 detail = AttemptDetailSerializer(existing)
                 return Response(detail.data, status=status.HTTP_409_CONFLICT)
             raise
@@ -560,12 +562,12 @@ class AnswerAutosaveView(APIView):
     permission_classes = [IsAuthenticated, IsAttemptOwner]
 
     def put(self, request, attempt_id, question_id):
-        attempt = get_object_or_404(Attempt, pk=attempt_id)
+        attempt = get_object_or_404(Attempt, id=attempt_id)
         self.check_object_permissions(request, attempt)
         if timezone.now() >= attempt.expires_at:
             return Response({"detail": "attempt_expired"}, status=400)
         question = get_object_or_404(
-            Question, pk=question_id, exam=attempt.exam
+            Question, id=question_id, exam=attempt.exam
         )
         serializer = AnswerAutoSaveSerializer(
             data=request.data,
@@ -701,7 +703,7 @@ class ReleaseAttemptView(APIView):
     permission_classes = [IsAuthenticated, IsExamAdmin]
 
     def post(self, request, attempt_id):
-        attempt = get_object_or_404(Attempt, pk=attempt_id)
+        attempt = get_object_or_404(Attempt, id=attempt_id)
         self.check_object_permissions(request, attempt.exam)
         if attempt.status != Attempt.Status.GRADED:
             raise ValidationError("Attempt not graded")
@@ -716,7 +718,7 @@ class BulkReleaseExamResultsView(APIView):
     permission_classes = [IsAuthenticated, IsExamAdmin]
 
     def post(self, request, exam_id):
-        exam = get_object_or_404(Exam, pk=exam_id)
+        exam = get_object_or_404(Exam, id=exam_id)
         self.check_object_permissions(request, exam)
         updated = exam.attempts.filter(status=Attempt.Status.GRADED).update(
             status=Attempt.Status.RELEASED,
