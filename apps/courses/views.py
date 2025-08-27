@@ -557,7 +557,7 @@ class AttemptDetailView(APIView):
         return Response(serializer.data)
 
 
-@extend_schema(tags=["Attempts"])
+@extend_schema(tags=["Attempts"], request=AnswerAutoSaveSerializer)
 class AnswerAutosaveView(APIView):
     permission_classes = [IsAuthenticated, IsAttemptOwner]
 
