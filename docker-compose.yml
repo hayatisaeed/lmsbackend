@@ -13,9 +13,14 @@ services:
       - redis
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.web.rule=Host(`${DOMAIN}`)"
-      - "traefik.http.routers.web.entrypoints=websecure"
-      - "traefik.http.routers.web.tls.certresolver=le"
+      # Django router (HTTPS)
+      - "traefik.http.routers.django.rule=Host(`${DOMAIN}`)"
+      - "traefik.http.routers.django.entrypoints=websecure"
+      - "traefik.http.routers.django.tls.certresolver=le"
+      # Explicit service port for clarity
+      - "traefik.http.services.django.loadbalancer.server.port=8000"
+      # Optional: common security/compression middlewares you may share with Next
+      - "traefik.http.routers.django.middlewares=secureHeaders,gzip"
     networks:
       - web
       - internal
@@ -54,20 +59,54 @@ services:
     command:
       - "--providers.docker=true"
       - "--providers.docker.exposedbydefault=false"
+
+      # File provider for Next.js routing & shared middlewares
+      - "--providers.file.filename=/etc/traefik/dynamic/dynamic.yml"
+
+      # Entrypoints
       - "--entrypoints.web.address=:80"
       - "--entrypoints.websecure.address=:443"
+
+      # Force HTTP -> HTTPS redirection (Traefik handles ACME challenge exception)
+      - "--entrypoints.web.http.redirections.entrypoint.to=websecure"
+      - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
+
+      # Let's Encrypt (HTTP-01 on :80)
       - "--certificatesresolvers.le.acme.httpchallenge=true"
       - "--certificatesresolvers.le.acme.httpchallenge.entrypoint=web"
       - "--certificatesresolvers.le.acme.email=${TRAEFIK_ACME_EMAIL}"
       - "--certificatesresolvers.le.acme.storage=/acme.json"
+
+      - "--api.dashboard=true"
+
     ports:
       - "80:80"
       - "443:443"
     volumes:
       - ./traefik/acme.json:/acme.json
+      - ./traefik/dynamic.yml:/etc/traefik/dynamic/dynamic.yml:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
     env_file:
       - .env
+
+    # Allow Traefik (in a container) to reach services on the host via a stable name
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+    labels:
+      - "traefik.enable=true"
+
+      # Dashboard router over HTTPS with LE cert
+      - "traefik.http.routers.traefik.rule=Host(`${TRAEFIK_DOMAIN}`)"
+      - "traefik.http.routers.traefik.entrypoints=websecure"
+      - "traefik.http.routers.traefik.tls.certresolver=le"
+      - "traefik.http.routers.traefik.service=api@internal"
+
+      # Security: Basic Auth (bcrypt htpasswd via env) + shared headers from file provider
+      - "traefik.http.middlewares.traefik-auth.basicauth.users=${TRAEFIK_DASHBOARD_AUTH_USERS}"
+      - "traefik.http.middlewares.traefik-chain.chain.middlewares=traefik-auth,secureHeaders@file"
+      - "traefik.http.routers.traefik.middlewares=traefik-chain"
+
     networks:
       - web
       - internal

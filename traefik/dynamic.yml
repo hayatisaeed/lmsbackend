@@ -1,0 +1,37 @@
+http:
+  routers:
+    # Next.js (host app) — HTTPS
+    nextjs:
+      rule: "Host(`${NEXT_DOMAIN}`)"
+      entryPoints: ["websecure"]
+      tls:
+        certResolver: "le"
+      service: "next_svc"
+      middlewares:
+        - "secureHeaders"
+        - "gzip"
+
+  services:
+    next_svc:
+      loadBalancer:
+        passHostHeader: true
+        servers:
+          - url: "http://host.docker.internal:3000"
+
+  middlewares:
+    gzip:
+      compress: {}
+
+    secureHeaders:
+      headers:
+        # HSTS (preload if you're confident all subdomains are HTTPS)
+        stsSeconds: 31536000
+        stsIncludeSubdomains: true
+        stsPreload: true
+        # Common hardening
+        contentTypeNosniff: true
+        browserXssFilter: true
+        frameDeny: true
+        referrerPolicy: "no-referrer-when-downgrade"
+        # Optional CSP: tune for your app (fonts, analytics, etc.)
+        # contentSecurityPolicy: "default-src 'self'; img-src 'self' data: https:; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data: https:;"
