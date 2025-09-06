@@ -398,11 +398,6 @@ class ParentSerializer(serializers.Serializer):
     phone = PhoneNumberField(required=True)
     relation = serializers.ChoiceField(choices=["father", "mother", "guardian"])
 
-    def validate_phone(self, value):
-        if not value.startswith("+"):
-            raise serializers.ValidationError("invalid_phone")
-        return value
-
     def save(self, **kwargs):
         user = self.context["request"].user
         contact, _ = ParentContact.objects.update_or_create(
